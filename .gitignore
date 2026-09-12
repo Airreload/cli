@@ -1,0 +1,8 @@
+.dart_tool/
+build/
+.airreload/
+/bin/airreload
+*.pem
+*.key
+*.log
+.DS_Store
