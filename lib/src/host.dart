@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
+import 'platform_support.dart';
 import 'tunnel.dart';
 import 'workspace.dart';
 
@@ -23,7 +26,7 @@ int connectionStatus({
 
 Future<void> runHost(Workspace workspace, int port) async {
   await workspace.preparePrivateDirectory();
-  final lock = await File('${workspace.state}/host.lock')
+  final lock = await File(p.join(workspace.state, 'host.lock'))
       .open(mode: FileMode.append);
   try {
     await lock.lock(FileLock.exclusive);
@@ -79,13 +82,11 @@ Future<void> runHost(Workspace workspace, int port) async {
         }
       }),
     );
-    for (final signal in [ProcessSignal.sigint, ProcessSignal.sigterm]) {
-      subscriptions.add(
-        signal.watch().listen((_) {
-          if (!stopped.isCompleted) stopped.complete();
-        }),
-      );
-    }
+    subscriptions.addAll(
+      watchTermination(() {
+        if (!stopped.isCompleted) stopped.complete();
+      }),
+    );
     final activeServer = server;
     final serving = () async {
       await for (final request in activeServer) {

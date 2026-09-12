@@ -8,6 +8,7 @@ import 'package:yaml/yaml.dart';
 import 'package:yaml_edit/yaml_edit.dart';
 
 import 'runtime_template.dart';
+import 'platform_support.dart';
 import 'workspace.dart';
 
 String dartLiteral(String value) => jsonEncode(value).replaceAll(r'$', r'\$');
@@ -92,7 +93,10 @@ class PreparedProject {
     );
     await Directory(destination).create(recursive: true);
     await _copyDirectory(Directory(source), Directory(destination), source);
-    await Link(p.join(destination, 'lib')).create(p.join(source, 'lib'));
+    await createDirectoryLink(
+      p.join(destination, 'lib'),
+      p.join(source, 'lib'),
+    );
     for (final filename in ['pubspec.yaml', 'pubspec_overrides.yaml']) {
       final file = File(p.join(destination, filename));
       if (!await file.exists()) continue;
@@ -181,7 +185,14 @@ Future<void> _copyDirectory(
     } else if (entity is File) {
       await entity.copy(target);
     } else if (entity is Link) {
-      await Link(target).create(await entity.resolveSymbolicLinks());
+      final resolved = await entity.resolveSymbolicLinks();
+      final type = await FileSystemEntity.type(resolved);
+      if (type == FileSystemEntityType.directory) {
+        await Directory(target).create();
+        await _copyDirectory(Directory(resolved), Directory(target), root);
+      } else if (type == FileSystemEntityType.file) {
+        await File(resolved).copy(target);
+      }
     }
   }
 }

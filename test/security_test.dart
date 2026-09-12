@@ -81,8 +81,10 @@ void main() {
           'token': 'synthetic-fixture',
           'port': 9443,
         });
-        expect((await Directory(workspace.state).stat()).mode & 0x1ff, 0x1c0);
-        expect((await File(workspace.session).stat()).mode & 0x1ff, 0x180);
+        if (!Platform.isWindows) {
+          expect((await Directory(workspace.state).stat()).mode & 0x1ff, 0x1c0);
+          expect((await File(workspace.session).stat()).mode & 0x1ff, 0x180);
+        }
         expect(await File(workspace.key).exists(), isFalse);
         expect(await File(workspace.certificate).exists(), isFalse);
       } finally {
@@ -90,4 +92,25 @@ void main() {
       }
     },
   );
+
+  test('host identity is generated without an external OpenSSL tool', () async {
+    final temporary = await Directory.systemTemp.createTemp(
+      'airreload-identity-test-',
+    );
+    try {
+      final workspace = Workspace(temporary.path);
+      await workspace.preparePrivateDirectory();
+      await workspace.ensureIdentity();
+      final certificate = await File(workspace.certificate).readAsString();
+      final key = await File(workspace.key).readAsString();
+      expect(certificate, contains('BEGIN CERTIFICATE'));
+      expect(key, contains('BEGIN PRIVATE KEY'));
+      expect(certificateDer(certificate), isNotEmpty);
+      SecurityContext()
+        ..useCertificateChain(workspace.certificate)
+        ..usePrivateKey(workspace.key);
+    } finally {
+      await temporary.delete(recursive: true);
+    }
+  });
 }
