@@ -37,6 +37,9 @@ jobs:
         run: dart analyze --fatal-infos
       - name: Test
         run: dart test
+      - name: Create build directory
+        shell: bash
+        run: mkdir -p build
       - name: Compile native executable
         run: dart compile exe bin/airreload.dart -o build/airreload${{ matrix.extension }}
       - name: Smoke-test native executable

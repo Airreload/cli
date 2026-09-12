@@ -156,7 +156,7 @@ void main() {
       ).dartArguments;
       expect(arguments, [
         '--dart-define=MODE=qa',
-        '--dart-define-from-file=${source.path}/env.json',
+        '--dart-define-from-file=${p.join(source.path, 'env.json')}',
       ]);
     } finally {
       await temp.delete(recursive: true);

@@ -35,13 +35,22 @@ bool _needsShell(String executable) {
   return extension == '.bat' || extension == '.cmd';
 }
 
+String _processExecutable(String executable) {
+  if (Platform.isWindows &&
+      executable.contains(' ') &&
+      !executable.contains('"')) {
+    return '"$executable"';
+  }
+  return executable;
+}
+
 Future<Process> startProcess(
   String executable,
   List<String> arguments, {
   String? workingDirectory,
   ProcessStartMode mode = ProcessStartMode.normal,
 }) => Process.start(
-  executable,
+  _processExecutable(executable),
   arguments,
   workingDirectory: workingDirectory,
   runInShell: _needsShell(executable),
@@ -53,7 +62,7 @@ Future<ProcessResult> runProcess(
   List<String> arguments, {
   String? workingDirectory,
 }) => Process.run(
-  executable,
+  _processExecutable(executable),
   arguments,
   workingDirectory: workingDirectory,
   runInShell: _needsShell(executable),
