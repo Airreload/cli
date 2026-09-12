@@ -29,31 +29,15 @@ String flutterLauncher(String root, {bool? windows}) => p.join(
   (windows ?? Platform.isWindows) ? 'flutter.bat' : 'flutter',
 );
 
-bool _needsShell(String executable) {
-  if (!Platform.isWindows) return false;
-  final extension = p.extension(executable).toLowerCase();
-  return extension == '.bat' || extension == '.cmd';
-}
-
-String _processExecutable(String executable) {
-  if (Platform.isWindows &&
-      executable.contains(' ') &&
-      !executable.contains('"')) {
-    return '"$executable"';
-  }
-  return executable;
-}
-
 Future<Process> startProcess(
   String executable,
   List<String> arguments, {
   String? workingDirectory,
   ProcessStartMode mode = ProcessStartMode.normal,
 }) => Process.start(
-  _processExecutable(executable),
+  executable,
   arguments,
   workingDirectory: workingDirectory,
-  runInShell: _needsShell(executable),
   mode: mode,
 );
 
@@ -61,12 +45,7 @@ Future<ProcessResult> runProcess(
   String executable,
   List<String> arguments, {
   String? workingDirectory,
-}) => Process.run(
-  _processExecutable(executable),
-  arguments,
-  workingDirectory: workingDirectory,
-  runInShell: _needsShell(executable),
-);
+}) => Process.run(executable, arguments, workingDirectory: workingDirectory);
 
 List<StreamSubscription<ProcessSignal>> watchTermination(
   void Function() terminate,
