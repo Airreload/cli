@@ -1,0 +1,44 @@
+name: CLI CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-latest
+            extension: ""
+          - name: macOS
+            os: macos-latest
+            extension: ""
+          - name: Windows
+            os: windows-latest
+            extension: .exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.2
+      - run: dart pub get
+      - name: Check formatting
+        run: dart format --output=none --set-exit-if-changed bin lib test
+      - name: Analyze
+        run: dart analyze --fatal-infos
+      - name: Test
+        run: dart test
+      - name: Compile native executable
+        run: dart compile exe bin/airreload.dart -o build/airreload${{ matrix.extension }}
+      - name: Smoke-test native executable
+        shell: bash
+        run: ./build/airreload${{ matrix.extension }} --version
