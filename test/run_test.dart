@@ -29,6 +29,24 @@ void main() {
     );
   });
 
+  test(
+    'lost connections and failed attach exits explain the reconnect wait',
+    () {
+      expect(
+        attachEndedMessage(0, stillConnected: false, sameConnection: true),
+        contains('Lost the app connection'),
+      );
+      expect(
+        attachEndedMessage(1, stillConnected: true, sameConnection: false),
+        contains('reconnect'),
+      );
+      expect(
+        attachEndedMessage(1, stillConnected: true, sameConnection: true),
+        contains('exit 1'),
+      );
+    },
+  );
+
   test('wrapper preserves async and argument-taking main without installing a binding or UI', () {
     final wrapper = entrypointWrapper(
       'package:example/main.dart',
@@ -128,7 +146,55 @@ void main() {
             'AndroidManifest.xml',
           ),
         ).readAsString(),
-        contains('android.permission.INTERNET'),
+        allOf(
+          contains('android.permission.INTERNET'),
+          contains('dev.airreload.runtime.AirreloadInitProvider'),
+        ),
+      );
+      expect(
+        await File(
+          p.join(
+            prepared.directory,
+            'android',
+            'app',
+            'src',
+            'debug',
+            'java',
+            'dev',
+            'airreload',
+            'runtime',
+            'AirreloadNativeTunnel.java',
+          ),
+        ).exists(),
+        isTrue,
+      );
+      expect(
+        jsonDecode(
+          await File(
+            p.join(
+              prepared.directory,
+              'android',
+              'app',
+              'src',
+              'debug',
+              'assets',
+              'airreload-session.json',
+            ),
+          ).readAsString(),
+        ),
+        containsPair('host', '192.0.2.3'),
+      );
+      expect(
+        await File(p.join(p.dirname(prepared.target), 'runtime.dart'))
+            .readAsString(),
+        allOf(
+          contains('airreload-vm.json'),
+          isNot(contains('WebSocket.connect')),
+        ),
+      );
+      expect(
+        await File(p.join(p.dirname(prepared.target), 'tunnel.dart')).exists(),
+        isFalse,
       );
       final document = loadYaml(
         await File(p.join(prepared.directory, 'pubspec.yaml')).readAsString(),
@@ -158,6 +224,17 @@ void main() {
         '--dart-define=MODE=qa',
         '--dart-define-from-file=${source.path}/env.json',
       ]);
+      expect(
+        attachArguments('http://127.0.0.1:50001/token=/', 'lib/main.dart'),
+        [
+          'attach',
+          '--airreload',
+          '--debug-url=http://127.0.0.1:50001/token=/',
+          '--dds',
+          '--devtools',
+          '--target=lib/main.dart',
+        ],
+      );
     } finally {
       await temp.delete(recursive: true);
     }

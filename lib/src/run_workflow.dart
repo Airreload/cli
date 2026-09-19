@@ -199,6 +199,7 @@ class RunWorkflow {
         '--debug',
         '--target-platform',
         'android-arm64',
+        '--android-skip-build-dependency-validation',
         '--target=${prepared.target}',
         if (options.flavor != null) '--flavor=${options.flavor}',
         ...options.dartArguments,
@@ -259,7 +260,8 @@ class RunWorkflow {
           ),
         );
         stdout.writeln(
-          'App connected. Starting Flutter attach; press r for hot reload, d to detach, or q to quit.',
+          'App connected. Starting Flutter attach; press r for hot reload, '
+          'R for hot restart, d to detach, or q to quit. DevTools stays on this computer.',
         );
         final connectionGeneration = host.connectionGeneration;
         final code = await _command([
@@ -273,6 +275,13 @@ class RunWorkflow {
         )) {
           return 0;
         }
+        stdout.writeln(
+          attachEndedMessage(
+            code,
+            stillConnected: host.debugUri != null,
+            sameConnection: host.connectionGeneration == connectionGeneration,
+          ),
+        );
         if (code != 0 &&
             host.debugUri == uri &&
             host.connectionGeneration == connectionGeneration) {
@@ -284,9 +293,6 @@ class RunWorkflow {
         } else {
           failures = 0;
         }
-        stdout.writeln(
-          'Connection ended. Waiting for the app to reconnect (Ctrl-C stops the session).',
-        );
         await _untilCancelled(Future<void>.delayed(const Duration(seconds: 2)));
       }
     } on _Cancelled {
@@ -312,3 +318,19 @@ bool shouldFinishAttach(
   required bool stillConnected,
   required bool sameConnection,
 }) => exitCode == 0 && stillConnected && sameConnection;
+
+String attachEndedMessage(
+  int exitCode, {
+  required bool stillConnected,
+  required bool sameConnection,
+}) {
+  if (!stillConnected || !sameConnection) {
+    return 'Lost the app connection. Waiting for the phone to reconnect so '
+        'reload, restart, and DevTools can resume (Ctrl-C stops the session).';
+  }
+  if (exitCode != 0) {
+    return 'Flutter attach ended (exit $exitCode). If a hot restart was in '
+        'progress, Airreload will reconnect automatically (Ctrl-C stops the session).';
+  }
+  return 'Connection ended. Waiting for the app to reconnect (Ctrl-C stops the session).';
+}

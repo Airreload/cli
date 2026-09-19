@@ -2,9 +2,20 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+/// Maximum multiplexed VM-service TCP channels on one authenticated WSS link.
+/// DDS, DevTools, and hot reload/restart can open several concurrent streams.
+const tunnelMaxSockets = 64;
+
+/// Incoming JSON text frames larger than this are treated as protocol abuse.
+const tunnelMaxFrameCharacters = 100000;
+
+/// Outgoing socket reads are split before base64 so WSS frames stay bounded.
+const tunnelChunkSize = 32768;
+
 /// Multiplexes VM service TCP streams over an authenticated WSS connection.
 ///
 /// The app can open sockets only to the VM service's fixed loopback port.
+/// The phone-side Android native connector must stay aligned with this protocol.
 class Tunnel {
   Tunnel(this.link, {this.vmPort, InternetAddress? vmAddress})
     : vmAddress = vmAddress ?? InternetAddress.loopbackIPv4;
@@ -16,12 +27,14 @@ class Tunnel {
   int _nextId = 0;
   bool _closed = false;
 
+  int get activeSockets => _sockets.length;
+
   void _send(Map<String, Object?> frame) {
     if (!_closed) link.add(jsonEncode(frame));
   }
 
   Future<void> attach(Socket socket) async {
-    if (_closed || _sockets.length >= 32) {
+    if (_closed || _sockets.length >= tunnelMaxSockets) {
       socket.destroy();
       return;
     }
@@ -45,8 +58,8 @@ class Tunnel {
     socket.listen(
       (bytes) {
         // Keep frames bounded, even when the operating system gives us large reads.
-        for (var start = 0; start < bytes.length; start += 32768) {
-          final end = (start + 32768).clamp(0, bytes.length);
+        for (var start = 0; start < bytes.length; start += tunnelChunkSize) {
+          final end = (start + tunnelChunkSize).clamp(0, bytes.length);
           _send({
             'op': 'data',
             'id': id,
@@ -76,7 +89,7 @@ class Tunnel {
   Future<void> run() async {
     try {
       await for (final raw in link) {
-        if (raw is! String || raw.length > 100000) {
+        if (raw is! String || raw.length > tunnelMaxFrameCharacters) {
           throw const FormatException('Invalid frame');
         }
         final message = jsonDecode(raw) as Map<String, dynamic>;
@@ -84,7 +97,7 @@ class Tunnel {
         switch (message['op']) {
           case 'open':
             if (vmPort == null ||
-                _sockets.length >= 32 ||
+                _sockets.length >= tunnelMaxSockets ||
                 _sockets.containsKey(id)) {
               throw const FormatException('Invalid channel request');
             }
