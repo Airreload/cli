@@ -3,7 +3,7 @@
 Airreload builds a Flutter Android debug APK, serves it over the local network,
 and attaches the Flutter tool for hot reload after the app opens.
 
-> **Beta:** The current version is `0.2.0-beta.1`.
+> **Beta:** The current version is `0.2.0-beta.2`.
 
 ## Requirements
 

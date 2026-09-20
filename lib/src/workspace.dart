@@ -8,7 +8,7 @@ import 'package:path/path.dart' as p;
 
 import 'platform_support.dart';
 
-const cliVersion = '0.2.0-beta.1';
+const cliVersion = '0.2.0-beta.2';
 const sdkCommit = '558d79bc24bfcadeff45b93a7d971ae670a1e8fc';
 
 class Workspace {
