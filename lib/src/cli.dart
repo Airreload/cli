@@ -84,7 +84,7 @@ class AirreloadRunner extends CommandRunner<int> {
       ) {
     final run = ActionCommand(
       'run',
-      'Build an ARM64 debug APK, show its QR code, and attach for hot reload, hot restart, and DevTools.\nUse r to hot reload and R to hot restart Dart changes under lib/. Re-run after changing assets, dependencies, or native code. External Gradle file references are not rewritten.',
+      'Show a one-time Airreload Go pairing QR, build the best matching debug APK for that phone, and attach for hot reload, hot restart, and DevTools.\nUse r to hot reload and R to hot restart Dart changes under lib/. Re-run after changing assets, dependencies, or native code. External Gradle file references are not rewritten.',
       (args) {
         final wait = int.tryParse(args['wait-timeout'] as String);
         if (wait == null || wait < 1) {
@@ -134,7 +134,8 @@ class AirreloadRunner extends CommandRunner<int> {
       ..addMultiOption(
         'dart-define-from-file',
         splitCommas: false,
-        help: 'Definitions file passed to build and attach, relative to the app directory.',
+        help:
+            'Definitions file passed to build and attach, relative to the app directory.',
       )
       ..addOption(
         'wait-timeout',

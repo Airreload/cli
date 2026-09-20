@@ -115,6 +115,17 @@ class RunOptions {
 
 class _Cancelled implements Exception {}
 
+/// Flutter target preference when a device reports more than one ABI.  Prefer
+/// 64-bit ARM, then 32-bit ARM, then 64-bit x86. Flutter does not support an
+/// x86-only APK target, so an x86-only phone is reported as incompatible.
+String? flutterAndroidTargetForAbis(Iterable<String> abis) {
+  final supported = abis.map((abi) => abi.toLowerCase()).toSet();
+  if (supported.contains('arm64-v8a')) return 'android-arm64';
+  if (supported.contains('armeabi-v7a')) return 'android-arm';
+  if (supported.contains('x86_64')) return 'android-x64';
+  return null;
+}
+
 class RunWorkflow {
   RunWorkflow(this.workspace);
   final Workspace workspace;
@@ -146,6 +157,7 @@ class RunWorkflow {
     final subscriptions = <StreamSubscription<ProcessSignal>>[];
     SessionHost? host;
     ApkServer? download;
+    PairingServer? pairing;
     for (final signal in [ProcessSignal.sigint, ProcessSignal.sigterm]) {
       subscriptions.add(
         signal.watch().listen((_) {
@@ -167,6 +179,7 @@ class RunWorkflow {
       final directory = await runs.createTemp('run-');
       final session = SessionWorkspace(workspace.root, directory.path);
       host = await SessionHost.start(session);
+      pairing = await PairingServer.start();
       stdout.writeln(
         'Preparing your app for this session ($address). Existing hosts are unchanged.',
       );
@@ -190,23 +203,67 @@ class RunWorkflow {
         'target': prepared.target,
         'host': address,
       });
+      final pairingUrl = pairing.url(address);
+      final qrPage = File(p.join(directory.path, 'pair.html'));
+      await qrPage.writeAsString(qrPairingPage(pairingUrl));
+      final openedQrPage = await openQrPage(qrPage);
       stdout.writeln(
-        'Building an ARM64 debug APK. Your app source and release configuration are unchanged.',
+        openedQrPage
+            ? '\nScan the pairing QR with Airreload Go, then confirm pairing on your phone.'
+            : '\nOpen the pairing QR page below, scan it with Airreload Go, then confirm pairing on your phone.',
+      );
+      stdout.writeln('QR page: ${qrPage.absolute.uri}');
+      if (stdout.hasTerminal && stdout.supportsAnsiEscapes) {
+        final qr = terminalQr(pairingUrl.toString());
+        final width = qr
+            .split('\n')
+            .first
+            .replaceAll(RegExp(r'\x1b\[[0-9;]*m'), '')
+            .length;
+        if (stdout.terminalColumns > width) {
+          stdout.writeln('Terminal QR (if needed):');
+          stdout.write(qr);
+        }
+      }
+      stdout.writeln(
+        'Waiting for Airreload Go to report this phone\'s Android ABIs…',
+      );
+      final abis = await _untilCancelled(
+        pairing.waitForPhone().timeout(
+          Duration(seconds: options.waitSeconds),
+          onTimeout: () => throw StateError(
+            'No phone paired. Scan the QR with Airreload Go, confirm pairing, and check that both devices are on the same trusted network.',
+          ),
+        ),
+      );
+      final targetPlatform = flutterAndroidTargetForAbis(abis);
+      if (targetPlatform == null) {
+        const message =
+            'This phone reports no Flutter-supported ABI. Airreload supports arm64-v8a, armeabi-v7a, and x86_64; x86-only devices are not supported.';
+        pairing.fail(message);
+        await _untilCancelled(Future<void>.delayed(const Duration(seconds: 3)));
+        throw StateError(message);
+      }
+      stdout.writeln(
+        'Paired phone ABIs: ${abis.join(', ')}. Building a $targetPlatform debug APK. Your app source and release configuration are unchanged.',
       );
       final build = await _command([
         'build',
         'apk',
         '--debug',
         '--target-platform',
-        'android-arm64',
+        targetPlatform,
         '--android-skip-build-dependency-validation',
         '--target=${prepared.target}',
         if (options.flavor != null) '--flavor=${options.flavor}',
         ...options.dartArguments,
       ], prepared.directory);
       if (build != 0) {
+        const prefix = 'Debug APK build failed';
+        pairing.fail('$prefix. See the Flutter build output on your computer.');
+        await _untilCancelled(Future<void>.delayed(const Duration(seconds: 3)));
         throw StateError(
-          'Debug APK build failed (exit $build). See the Flutter build output above.',
+          '$prefix (exit $build). See the Flutter build output above.',
         );
       }
       final apk = File(
@@ -223,28 +280,11 @@ class RunWorkflow {
       );
       download = await ApkServer.start(apk);
       final url = download.url(address).toString();
-      final qrPage = File(p.join(directory.path, 'install.html'));
-      await qrPage.writeAsString(qrDownloadPage(download.url(address)));
-      final openedQrPage = await openQrPage(qrPage);
+      pairing.publishDownload(download.url(address));
       stdout.writeln(
-        openedQrPage
-            ? '\nScan the QR in your browser with your Android phone, install the APK, then open your app.'
-            : '\nOpen the QR page below on this computer, scan it with your Android phone, then install and open the app.',
+        '\nThe ABI-matched APK is ready. Airreload Go will download it automatically. Approve Android\'s install prompt, then open your app.',
       );
-      stdout.writeln('QR page: ${qrPage.absolute.uri}');
-      if (stdout.hasTerminal && stdout.supportsAnsiEscapes) {
-        final qr = terminalQr(url);
-        final width = qr
-            .split('\n')
-            .first
-            .replaceAll(RegExp(r'\x1b\[[0-9;]*m'), '')
-            .length;
-        if (stdout.terminalColumns > width) {
-          stdout.writeln('Terminal QR (if needed):');
-          stdout.write(qr);
-        }
-      }
-      stdout.writeln('Download: $url');
+      stdout.writeln('Authorized download endpoint: $url');
       stdout.writeln('APK: ${apk.path}');
       stdout.writeln(
         'Keep this terminal open. Waiting for the app to connect…',
@@ -252,10 +292,10 @@ class RunWorkflow {
       var failures = 0;
       while (true) {
         final uri = await _untilCancelled(
-          host.waitForApp().timeout(
+          host.waitForReadyApp().timeout(
             Duration(seconds: options.waitSeconds),
             onTimeout: () => throw StateError(
-              'No app connected. Check that the phone can reach $address, then install and open this session\'s APK. If the wrong network interface was selected, rerun with --host.',
+              'The app\'s VM service did not become reachable. Check that the phone can reach $address, then install and open this session\'s APK. If the wrong network interface was selected, rerun with --host.',
             ),
           ),
         );
@@ -304,7 +344,11 @@ class RunWorkflow {
       try {
         await download?.close();
       } finally {
-        await host?.close();
+        try {
+          await pairing?.close();
+        } finally {
+          await host?.close();
+        }
       }
       stdout.writeln(
         'Airreload session stopped. Its download and control endpoints are closed.',

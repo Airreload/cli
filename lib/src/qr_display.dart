@@ -59,6 +59,39 @@ String qrDownloadPage(Uri download) {
 ''';
 }
 
+String qrPairingPage(Uri pairing) {
+  final url = const HtmlEscape().convert(pairing.toString());
+  return '''<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Airreload — Pair phone</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 32px 20px; background: #f4f5f7; color: #151719;
+      font: 17px/1.5 system-ui, sans-serif; text-align: center; }
+    main { max-width: 720px; margin: auto; }
+    h1 { margin-bottom: 8px; font-size: 30px; }
+    p { margin: 12px 0; }
+    svg { display: block; max-width: 100%; height: auto; margin: 24px auto; }
+    .hint { color: #4e535a; font-size: 15px; }
+  </style>
+</head>
+<body><main>
+  <h1>Pair Airreload Go</h1>
+  <p>Scan this code in Airreload Go and confirm pairing. It reports only your phone’s supported Android ABIs, then Airreload builds the matching debug APK.</p>
+  ${qrSvg(pairing.toString())}
+  <p>Keep your phone and computer on the same trusted network.</p>
+  <p class="hint">This short-lived pairing code authorizes one phone and does not download or install anything until you confirm it in Airreload Go.</p>
+  <p class="hint">Keep the Airreload terminal running during pairing, installation, and development.</p>
+  <p class="hint">Pairing address:<br>$url</p>
+</main></body>
+</html>
+''';
+}
+
 Future<bool> openQrPage(File page) async {
   if (Platform.environment.containsKey('SSH_CONNECTION') ||
       Platform.environment.containsKey('SSH_TTY')) {

@@ -63,6 +63,9 @@ public final class AirreloadNativeTunnel {
     }
     started = true;
     final Context app = context.getApplicationContext();
+    // ContentProvider startup precedes Flutter's new engine. Disk caches can
+    // still contain the VM port and auth path belonging to the dead process.
+    clearVmCache(vmCacheDirectories(app));
     Thread thread =
         new Thread(
             new Runnable() {
@@ -101,13 +104,7 @@ public final class AirreloadNativeTunnel {
     if (fromEngine != null) {
       return fromEngine;
     }
-    File[] dirs =
-        new File[] {
-          context.getCodeCacheDir(),
-          context.getCacheDir(),
-          context.getFilesDir(),
-          new File(context.getApplicationInfo().dataDir)
-        };
+    File[] dirs = vmCacheDirectories(context);
     for (int i = 0; i < dirs.length; i++) {
       File dir = dirs[i];
       if (dir == null) {
@@ -123,6 +120,23 @@ public final class AirreloadNativeTunnel {
       }
     }
     return null;
+  }
+
+  private static File[] vmCacheDirectories(Context context) {
+    return new File[] {
+      context.getCodeCacheDir(),
+      context.getCacheDir(),
+      context.getFilesDir(),
+      new File(context.getApplicationInfo().dataDir)
+    };
+  }
+
+  static void clearVmCache(File[] dirs) {
+    for (File dir : dirs) {
+      if (dir == null) continue;
+      File endpoint = new File(dir, VM_FILE);
+      if (endpoint.isFile()) endpoint.delete();
+    }
   }
 
   private static String vmServiceUriFromEngine() {

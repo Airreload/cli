@@ -8,6 +8,100 @@ import 'package:airreload/src/workspace.dart';
 import 'package:test/test.dart';
 
 void main() {
+  group('reopening an app', () {
+    test(
+      'a cached dead VM is discarded before attaching to the new process',
+      () async {
+        await _withSession((host, client, proxy) async {
+          final oldVm = await _FakeVm.start();
+          final oldPort = oldVm.port;
+          await oldVm.close();
+          final ready = host.waitForReadyApp();
+          await _connectPhone(host, client, oldPort);
+          await _waitUntil(() => host.debugUri == null);
+          final newVm = await _FakeVm.start(authPath: '/new-process=/');
+          try {
+            await _connectPhone(
+              host,
+              client,
+              newVm.port,
+              path: '/new-process=/',
+            );
+            final uri = await ready.timeout(const Duration(seconds: 5));
+            expect(uri.path, '/new-process=/');
+            expect(host.connectionGeneration, 2);
+            await _expectProxiedGet(uri, '"fake-vm"');
+          } finally {
+            await newVm.close();
+          }
+        });
+      },
+    );
+
+    test(
+      'a live port with the old VM auth path is not reported as ready',
+      () async {
+        await _withSession((host, client, proxy) async {
+          final vm = await _FakeVm.start(authPath: '/new-process=/');
+          try {
+            final ready = host.waitForReadyApp();
+            await _connectPhone(host, client, vm.port, path: '/old-process=/');
+            await _waitUntil(() => host.debugUri == null);
+            await _connectPhone(host, client, vm.port, path: '/new-process=/');
+            expect(
+              (await ready.timeout(const Duration(seconds: 5))).path,
+              '/new-process=/',
+            );
+            expect(host.connectionGeneration, 2);
+          } finally {
+            await vm.close();
+          }
+        });
+      },
+    );
+
+    test(
+      'an unresponsive tunnel times out and permits a fresh connection',
+      () async {
+        await _withSession((host, client, proxy) async {
+          final ready = host.waitForReadyApp(
+            probeTimeout: const Duration(milliseconds: 150),
+          );
+          final connected = host.waitForApp();
+          final link = await WebSocket.connect(
+            Uri(
+              scheme: 'wss',
+              host: '127.0.0.1',
+              port: host.server.port,
+              path: '/connect',
+            ).toString(),
+            customClient: client,
+            headers: {
+              'Authorization': 'Bearer ${host.token}',
+              'x-airreload-vm-path': '/stale=/',
+            },
+          );
+          // Consume frames but never acknowledge any proxy socket opens.
+          final incoming = link.listen((_) {});
+          await connected;
+          await _waitUntil(() => host.debugUri == null);
+          final vm = await _FakeVm.start();
+          try {
+            await _connectPhone(host, client, vm.port);
+            expect(
+              (await ready.timeout(const Duration(seconds: 5))).path,
+              '/first-token=/',
+            );
+          } finally {
+            await incoming.cancel();
+            await link.close();
+            await vm.close();
+          }
+        });
+      },
+    );
+  });
+
   test('Dart-owned connector death drops the desktop proxy tunnel', () async {
     await _withSession((host, client, proxy) async {
       final vm = await _FakeVm.start();
@@ -219,9 +313,22 @@ class _FakeVm {
   final HttpServer server;
   int get port => server.port;
 
-  static Future<_FakeVm> start() async {
+  static Future<_FakeVm> start({String? authPath}) async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((request) async {
+      if (authPath != null && !request.uri.path.startsWith(authPath)) {
+        request.response.statusCode = HttpStatus.forbidden;
+        await request.response.close();
+        return;
+      }
+      if (request.uri.path.endsWith('/getVersion')) {
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          '{"result":{"type":"Version","major":4,"minor":0}}',
+        );
+        await request.response.close();
+        return;
+      }
       if (WebSocketTransformer.isUpgradeRequest(request)) {
         final socket = await WebSocketTransformer.upgrade(request);
         socket.listen((message) {
