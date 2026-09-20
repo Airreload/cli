@@ -173,7 +173,7 @@ List<String> attachArguments(String url, String? target) => [
   'attach',
   '--airreload',
   '--debug-url=${validateDebugUrl(url)}',
-  '--no-dds',
-  '--no-devtools',
+  '--dds',
+  '--devtools',
   if (target != null) '--target=$target',
 ];

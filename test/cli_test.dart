@@ -96,6 +96,7 @@ void main() {
         expect(output.text.toString(), contains(command));
       }
       expect(output.text.toString(), contains('Pub workspaces'));
+      expect(output.text.toString(), contains('hot restart'));
       expect(Directory(operations.workspace.state).existsSync(), isFalse);
       expect(operations.calls, isEmpty);
     },
@@ -113,6 +114,23 @@ void main() {
       expect(operations.calls, ['run']);
     },
   );
+
+  test('run help mentions hot reload, hot restart, and DevTools', () async {
+    expect(await run(['help', 'run']), 0);
+    expect(output.text.toString(), contains('hot reload'));
+    expect(output.text.toString(), contains('hot restart'));
+    expect(output.text.toString(), contains('DevTools'));
+  });
+
+  test('attach help mentions hot restart and DevTools', () async {
+    expect(await run(['help', 'attach']), 0);
+    expect(output.text.toString(), contains('hot restart'));
+    expect(output.text.toString(), contains('DevTools'));
+    expect(
+      output.text.toString(),
+      isNot(contains('does not support hot restart')),
+    );
+  });
 
   test('version flag is read-only', () async {
     expect(await run(['--version']), 0);
@@ -194,8 +212,8 @@ void main() {
       'attach',
       '--airreload',
       '--debug-url=http://127.0.0.1:50001/test-auth=/',
-      '--no-dds',
-      '--no-devtools',
+      '--dds',
+      '--devtools',
       '--target=lib/demo.dart',
     ]);
     expect(operations.calls, ['session', 'attach:${temporary.path}']);

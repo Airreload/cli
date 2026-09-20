@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 import 'package:yaml_edit/yaml_edit.dart';
 
+import 'android_runtime.dart';
 import 'runtime_template.dart';
 import 'platform_support.dart';
 import 'workspace.dart';
@@ -133,33 +134,18 @@ class PreparedProject {
         .writeAsString(wrapper);
     await File(p.join(generated.path, 'runtime.dart'))
         .writeAsString(runtimeTemplate);
-    await File(p.join(sdk.root, 'cli', 'lib', 'src', 'tunnel.dart'))
-        .copy(p.join(generated.path, 'tunnel.dart'));
     await File(p.join(generated.path, 'config.dart')).writeAsString(
       'const computerHost = ${dartLiteral(host)};\nconst tunnelPort = $port;\n'
       'const sessionToken = ${dartLiteral(token)};\nconst certificatePin = ${dartLiteral(base64Encode(certificateDer(certificate)))};\n',
     );
-    final manifest = File(
-      p.join(
-        destination,
-        'android',
-        'app',
-        'src',
-        'debug',
-        'AndroidManifest.xml',
-      ),
+    await injectAirreloadAndroidRuntime(
+      destination: destination,
+      workspaceRoot: sdk.root,
+      host: host,
+      port: port,
+      token: token,
+      certificatePin: base64Encode(certificateDer(certificate)),
     );
-    await manifest.parent.create(recursive: true);
-    var text = await manifest.exists()
-        ? await manifest.readAsString()
-        : '<manifest xmlns:android="http://schemas.android.com/apk/res/android"></manifest>';
-    if (!text.contains('android.permission.INTERNET')) {
-      text = text.replaceFirst(
-        '</manifest>',
-        '<uses-permission android:name="android.permission.INTERNET"/></manifest>',
-      );
-    }
-    await manifest.writeAsString(text);
     return PreparedProject(
       source,
       destination,

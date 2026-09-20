@@ -79,13 +79,13 @@ class AirreloadRunner extends CommandRunner<int> {
   AirreloadRunner(this.operations)
     : super(
         'airreload',
-        'Build and hot reload a Flutter Android app over your local network.\n'
+        'Build, hot reload, and hot restart a Flutter Android app over your local network.\n'
             'Run airreload run from a standalone app with a top-level main function under lib/.\n'
             'Pub workspaces and add-to-app modules are not supported.',
       ) {
     final run = ActionCommand(
       'run',
-      'Build an ARM64 debug APK, show its QR code, and attach for hot reload.\nUse hot reload for Dart changes under lib/. Re-run after changing assets, dependencies, or native code. External Gradle file references are not rewritten.',
+      'Show a one-time Airreload Go pairing QR, build the best matching debug APK for that phone, and attach for hot reload, hot restart, and DevTools.\nUse r to hot reload and R to hot restart Dart changes under lib/. Re-run after changing assets, dependencies, or native code. External Gradle file references are not rewritten.',
       (args) {
         final wait = int.tryParse(args['wait-timeout'] as String);
         if (wait == null || wait < 1) {
@@ -231,7 +231,7 @@ class AirreloadRunner extends CommandRunner<int> {
     addCommand(pair);
     final attach = ActionCommand(
       'attach',
-      'Attach to a connected compatible app for hot reload. Does not install or launch the app, and does not support hot restart.',
+      'Attach to a connected compatible app for hot reload, hot restart, and DevTools. Does not install or launch the app.',
       (args) async {
         final project = args['project'] as String?;
         if (project == null ||

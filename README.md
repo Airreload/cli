@@ -9,7 +9,7 @@ and attaches the Flutter tool for hot reload after the app opens.
 
 - macOS, Linux, or Windows
 - Git
-- An ARM64 Android device on the same network as the development computer
+- An Android device on the same trusted network as the development computer, with Airreload Go installed
 - A standalone Flutter app with a top-level `main` function under `lib/`
 - The [Airreload Flutter fork](https://github.com/Airreload/flutter) at commit
   `558d79bc24bfcadeff45b93a7d971ae670a1e8fc`
@@ -72,13 +72,28 @@ Windows PowerShell:
 .\bin\airreload.exe run --project C:\path\to\flutter-app
 ```
 
-Scan the displayed QR code with the Android phone, install the APK, and open
-the app. In the terminal, press `r` for hot reload, `d` to detach, or `q` to
-quit.
+Scan the displayed QR code in Airreload Go and confirm pairing. Go reports the
+phone's Android ABI list (no USB debugging or developer options are needed),
+then the CLI builds the best Flutter target: `arm64-v8a`, then `armeabi-v7a`,
+then `x86_64`. Go automatically downloads the result after pairing; approve
+Android's normal install screen, then open the app. In the terminal, press `r` for hot
+reload, `d` to detach, or `q` to quit.
 
-Run `airreload help run` for build options. Dart changes under `lib/` can hot
-reload; re-run the command after changing assets, dependencies, or native code.
-Hot restart is not supported.
+The pairing QR is short-lived, permits one phone, and contains a high-entropy
+secret. It uses HTTP only on the local development network because Go must
+pair before the newly built APK can pin Airreload's session certificate. Treat
+it as you would any trusted-LAN development workflow. The session tunnel in
+the installed app remains TLS-authenticated, and the APK endpoint serves only
+the session's single, unguessable artifact route.
+
+Run `./bin/airreload help run` for build options. Dart changes under `lib/` can
+hot reload; re-run the command after changing assets, dependencies, or native
+code. Press `R` for hot restart.
+
+If you close the app on the phone, keep the terminal open and reopen the app.
+Airreload verifies the new process's VM service before attaching again and
+discards tunnels pointing at a stale VM. After updating Airreload's native
+runtime, run a fresh pairing/build and install the new debug APK once.
 
 ## Contributing
 

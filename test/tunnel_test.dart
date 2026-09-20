@@ -94,6 +94,37 @@ void main() {
     await host.close();
     await running;
   });
+  test('host multiplexes concurrent channels for simultaneous HTTP and WebSocket clients', () async {
+    final link = MemoryLink();
+    final first = MemorySocket();
+    final second = MemorySocket();
+    final host = Tunnel(link);
+    final running = host.run();
+    final attachedFirst = host.attach(first);
+    final attachedSecond = host.attach(second);
+    expect(
+      link.sent
+          .where((frame) => frame['op'] == 'open')
+          .map((frame) => frame['id']),
+      [1, 2],
+    );
+    link.receive({'op': 'ready', 'id': 1});
+    link.receive({'op': 'ready', 'id': 2});
+    await attachedFirst;
+    await attachedSecond;
+    first.incoming.add(Uint8List.fromList([1, 2]));
+    second.incoming.add(Uint8List.fromList([3, 4]));
+    await Future<void>.delayed(Duration.zero);
+    final data = link.sent.where((frame) => frame['op'] == 'data').toList();
+    expect(data, hasLength(2));
+    expect(base64Decode(data[0]['data'] as String), [1, 2]);
+    expect(base64Decode(data[1]['data'] as String), [3, 4]);
+    expect(host.activeSockets, 2);
+    await host.close();
+    await running;
+    expect(first.destroyed, isTrue);
+    expect(second.destroyed, isTrue);
+  });
   test('host rejects peer-initiated channels', () async {
     final link = MemoryLink();
     final host = Tunnel(link);

@@ -29,6 +29,24 @@ void main() {
     );
   });
 
+  test(
+    'lost connections and failed attach exits explain the reconnect wait',
+    () {
+      expect(
+        attachEndedMessage(0, stillConnected: false, sameConnection: true),
+        contains('Lost the app connection'),
+      );
+      expect(
+        attachEndedMessage(1, stillConnected: true, sameConnection: false),
+        contains('reconnect'),
+      );
+      expect(
+        attachEndedMessage(1, stillConnected: true, sameConnection: true),
+        contains('exit 1'),
+      );
+    },
+  );
+
   test('wrapper preserves async and argument-taking main without installing a binding or UI', () {
     final wrapper = entrypointWrapper(
       'package:example/main.dart',
@@ -128,7 +146,55 @@ void main() {
             'AndroidManifest.xml',
           ),
         ).readAsString(),
-        contains('android.permission.INTERNET'),
+        allOf(
+          contains('android.permission.INTERNET'),
+          contains('dev.airreload.runtime.AirreloadInitProvider'),
+        ),
+      );
+      expect(
+        await File(
+          p.join(
+            prepared.directory,
+            'android',
+            'app',
+            'src',
+            'debug',
+            'java',
+            'dev',
+            'airreload',
+            'runtime',
+            'AirreloadNativeTunnel.java',
+          ),
+        ).exists(),
+        isTrue,
+      );
+      expect(
+        jsonDecode(
+          await File(
+            p.join(
+              prepared.directory,
+              'android',
+              'app',
+              'src',
+              'debug',
+              'assets',
+              'airreload-session.json',
+            ),
+          ).readAsString(),
+        ),
+        containsPair('host', '192.0.2.3'),
+      );
+      expect(
+        await File(p.join(p.dirname(prepared.target), 'runtime.dart'))
+            .readAsString(),
+        allOf(
+          contains('airreload-vm.json'),
+          isNot(contains('WebSocket.connect')),
+        ),
+      );
+      expect(
+        await File(p.join(p.dirname(prepared.target), 'tunnel.dart')).exists(),
+        isFalse,
       );
       final document = loadYaml(
         await File(p.join(prepared.directory, 'pubspec.yaml')).readAsString(),
@@ -158,6 +224,17 @@ void main() {
         '--dart-define=MODE=qa',
         '--dart-define-from-file=${p.join(source.path, 'env.json')}',
       ]);
+      expect(
+        attachArguments('http://127.0.0.1:50001/token=/', 'lib/main.dart'),
+        [
+          'attach',
+          '--airreload',
+          '--debug-url=http://127.0.0.1:50001/token=/',
+          '--dds',
+          '--devtools',
+          '--target=lib/main.dart',
+        ],
+      );
     } finally {
       await temp.delete(recursive: true);
     }
@@ -270,5 +347,73 @@ void main() {
     expect(qr, startsWith('\x1b[30;47m    '));
     expect(qr, contains('▀'));
     expect(qr, contains('\x1b[0m'));
+  });
+
+  test(
+    'Flutter Android target selection follows the documented ABI preference',
+    () {
+      expect(
+        flutterAndroidTargetForAbis(['arm64-v8a', 'armeabi-v7a']),
+        'android-arm64',
+      );
+      expect(
+        flutterAndroidTargetForAbis(['armeabi-v7a', 'x86_64']),
+        'android-arm',
+      );
+      expect(flutterAndroidTargetForAbis(['x86_64']), 'android-x64');
+      expect(flutterAndroidTargetForAbis(['x86']), isNull);
+    },
+  );
+
+  test('pairing endpoint accepts one ABI report and discloses an APK only when ready', () async {
+    final server = await PairingServer.start();
+    final client = HttpClient();
+    final url = server.url('127.0.0.1');
+    try {
+      final initial = await (await client.getUrl(url)).close();
+      expect(initial.statusCode, HttpStatus.ok);
+      expect(
+        jsonDecode(await utf8.decoder.bind(initial).join()),
+        containsPair('state', 'building'),
+      );
+
+      final report = await client.postUrl(url);
+      report.headers.contentType = ContentType.json;
+      report.write(
+        jsonEncode({
+          'abis': ['arm64-v8a', 'armeabi-v7a'],
+        }),
+      );
+      final response = await report.close();
+      expect(response.statusCode, HttpStatus.ok);
+      expect(await server.waitForPhone(), ['arm64-v8a', 'armeabi-v7a']);
+
+      final duplicate = await client.postUrl(url);
+      duplicate.headers.contentType = ContentType.json;
+      duplicate.write(
+        jsonEncode({
+          'abis': ['arm64-v8a'],
+        }),
+      );
+      expect((await duplicate.close()).statusCode, HttpStatus.conflict);
+
+      final apk = Uri.parse('http://127.0.0.1:9999/only-this-apk');
+      server.publishDownload(apk);
+      final ready = await (await client.getUrl(url)).close();
+      final body = jsonDecode(await utf8.decoder.bind(ready).join());
+      expect(body, containsPair('state', 'ready'));
+      expect(body, containsPair('downloadUrl', apk.toString()));
+
+      final wrongToken = url.replace(
+        queryParameters: {'airreload_pairing': '1', 'token': 'x' * 43},
+      );
+      expect(
+        (await (await client.getUrl(wrongToken)).close()).statusCode,
+        HttpStatus.notFound,
+      );
+    } finally {
+      client.close(force: true);
+      await server.close();
+    }
   });
 }
