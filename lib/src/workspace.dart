@@ -2,8 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:basic_utils/basic_utils.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
+
+import 'platform_support.dart';
 
 const cliVersion = '0.2.0-beta.1';
 const sdkCommit = '558d79bc24bfcadeff45b93a7d971ae670a1e8fc';
@@ -11,7 +14,7 @@ const sdkCommit = '558d79bc24bfcadeff45b93a7d971ae670a1e8fc';
 class Workspace {
   Workspace(this.root);
   final String root;
-  String get flutter => p.join(root, 'flutter', 'bin', 'flutter');
+  String get flutter => flutterLauncher(root);
   String get state => p.join(root, 'cli', '.airreload');
   String get certificate => p.join(state, 'host-cert.pem');
   String get key => p.join(state, 'host-key.pem');
@@ -19,13 +22,13 @@ class Workspace {
 
   Future<void> preparePrivateDirectory() async {
     await Directory(state).create(recursive: true);
-    await _chmod('700', state);
+    await restrictAccess(state, directory: true);
   }
 
   Future<void> writeSession(Map<String, Object?> value) async {
     final temporary = File('$session.tmp');
     await temporary.writeAsString(jsonEncode(value), flush: true);
-    await _chmod('600', temporary.path);
+    await restrictAccess(temporary.path, directory: false);
     await temporary.rename(session);
   }
 
@@ -40,29 +43,39 @@ class Workspace {
     }
     final temporary = await Directory(state).createTemp('identity-');
     try {
-      await _chmod('700', temporary.path);
-      final result = await Process.run('openssl', [
-        'req',
-        '-x509',
-        '-newkey',
-        'rsa:2048',
-        '-nodes',
-        '-keyout',
-        p.join(temporary.path, 'key.pem'),
-        '-out',
-        p.join(temporary.path, 'cert.pem'),
-        '-days',
-        '365',
-        '-subj',
-        '/CN=Airreload local development',
-      ]);
-      if (result.exitCode != 0) {
-        throw StateError('OpenSSL could not generate the host identity.');
-      }
-      await _chmod('600', p.join(temporary.path, 'key.pem'));
-      await _chmod('600', p.join(temporary.path, 'cert.pem'));
-      await File(p.join(temporary.path, 'key.pem')).rename(key);
-      await File(p.join(temporary.path, 'cert.pem')).rename(certificate);
+      await restrictAccess(temporary.path, directory: true);
+      final pair = CryptoUtils.generateRSAKeyPair();
+      final privateKey = pair.privateKey as RSAPrivateKey;
+      final publicKey = pair.publicKey as RSAPublicKey;
+      final subject = {'CN': 'Airreload local development'};
+      final request = X509Utils.generateRsaCsrPem(
+        subject,
+        privateKey,
+        publicKey,
+      );
+      final random = Random.secure();
+      final serial = BigInt.parse(
+        List<int>.generate(
+          16,
+          (_) => random.nextInt(256),
+        ).map((byte) => byte.toRadixString(16).padLeft(2, '0')).join(),
+        radix: 16,
+      ).toString();
+      final privatePem = CryptoUtils.encodeRSAPrivateKeyToPem(privateKey);
+      final certificatePem = X509Utils.generateSelfSignedCertificate(
+        privateKey,
+        request,
+        365,
+        serialNumber: serial,
+      );
+      final temporaryKey = File(p.join(temporary.path, 'key.pem'));
+      final temporaryCertificate = File(p.join(temporary.path, 'cert.pem'));
+      await temporaryKey.writeAsString(privatePem, flush: true);
+      await temporaryCertificate.writeAsString(certificatePem, flush: true);
+      await restrictAccess(temporaryKey.path, directory: false);
+      await restrictAccess(temporaryCertificate.path, directory: false);
+      await temporaryKey.rename(key);
+      await temporaryCertificate.rename(certificate);
     } finally {
       await temporary.delete(recursive: true);
     }
@@ -111,13 +124,6 @@ class Workspace {
     } finally {
       client.close(force: true);
     }
-  }
-}
-
-Future<void> _chmod(String mode, String path) async {
-  final result = await Process.run('chmod', [mode, path]);
-  if (result.exitCode != 0) {
-    throw StateError('Could not restrict access to $path.');
   }
 }
 

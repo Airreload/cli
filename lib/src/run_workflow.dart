@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:qr/qr.dart';
 
 import 'instrumentation.dart';
+import 'platform_support.dart';
 import 'qr_display.dart';
 import 'session_host.dart';
 import 'workspace.dart';
@@ -64,28 +65,50 @@ Future<String> selectComputerAddress(String? override) async {
   } on ProcessException {
     /* Fall back to active interface enumeration. */
   }
-  final candidates = [...interfaces]
-    ..sort((a, b) {
-      int rank(NetworkInterface i) => i.name == preferred
-          ? 0
-          : RegExp(r'^(en|eth|wlan|wl)').hasMatch(i.name)
-          ? 1
-          : 2;
-      return rank(a).compareTo(rank(b));
-    });
-  for (final interface in candidates) {
-    if (RegExp(r'^(utun|tun|docker|veth|lo)').hasMatch(interface.name)) {
-      continue;
-    }
-    for (final address in interface.addresses) {
-      if (!address.isLoopback && !address.address.startsWith('169.254.')) {
-        return address.address;
-      }
-    }
+  final candidates =
+      [
+        for (final interface in interfaces)
+          for (final address in interface.addresses)
+            if (!address.isLoopback && !address.address.startsWith('169.254.'))
+              (interface.name, address.address),
+      ]..sort(
+        (a, b) => networkAddressRank(
+          a.$1,
+          a.$2,
+          preferred: preferred,
+        ).compareTo(networkAddressRank(b.$1, b.$2, preferred: preferred)),
+      );
+  for (final candidate in candidates) {
+    if (!isVirtualInterface(candidate.$1)) return candidate.$2;
   }
   throw StateError(
     'No usable LAN IPv4 address found. Connect to Wi-Fi or use --host <computer-lan-ip>.',
   );
+}
+
+bool isVirtualInterface(String name) => RegExp(
+  r'(^lo$|loopback|utun|\btun\b|docker|veth|virtual|vmware|vbox|hyper-v|vethernet|bluetooth)',
+  caseSensitive: false,
+).hasMatch(name);
+
+int networkAddressRank(
+  String interfaceName,
+  String address, {
+  String? preferred,
+}) {
+  if (isVirtualInterface(interfaceName)) return 4;
+  if (interfaceName == preferred) return 0;
+  if (RegExp(
+    r'(^en\d|^eth|^wl|wlan|wi-?fi|wireless|ethernet)',
+    caseSensitive: false,
+  ).hasMatch(interfaceName)) {
+    return 1;
+  }
+  if (RegExp(r'^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)')
+      .hasMatch(address)) {
+    return 2;
+  }
+  return 3;
 }
 
 class RunOptions {
@@ -134,14 +157,14 @@ class RunWorkflow {
 
   Future<int> _command(List<String> arguments, String directory) async {
     if (_cancelled.isCompleted) throw _Cancelled();
-    final child = await Process.start(
+    final child = await startProcess(
       workspace.flutter,
       arguments,
       workingDirectory: directory,
       mode: ProcessStartMode.inheritStdio,
     );
     _process = child;
-    if (_cancelled.isCompleted) child.kill(ProcessSignal.sigint);
+    if (_cancelled.isCompleted) stopProcess(child);
     final code = await child.exitCode;
     _process = null;
     if (_cancelled.isCompleted) throw _Cancelled();
@@ -158,14 +181,13 @@ class RunWorkflow {
     SessionHost? host;
     ApkServer? download;
     PairingServer? pairing;
-    for (final signal in [ProcessSignal.sigint, ProcessSignal.sigterm]) {
-      subscriptions.add(
-        signal.watch().listen((_) {
-          if (!_cancelled.isCompleted) _cancelled.complete();
-          _process?.kill(ProcessSignal.sigint);
-        }),
-      );
-    }
+    subscriptions.addAll(
+      watchTermination(() {
+        if (!_cancelled.isCompleted) _cancelled.complete();
+        final process = _process;
+        if (process != null) stopProcess(process);
+      }),
+    );
     try {
       final address = await selectComputerAddress(options.host);
       final source = p.normalize(p.absolute(options.project));

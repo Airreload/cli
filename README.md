@@ -7,8 +7,8 @@ and attaches the Flutter tool for hot reload after the app opens.
 
 ## Requirements
 
-- macOS or Linux
-- Git and OpenSSL
+- macOS, Linux, or Windows
+- Git
 - An Android device on the same trusted network as the development computer, with Airreload Go installed
 - A standalone Flutter app with a top-level `main` function under `lib/`
 - The [Airreload Flutter fork](https://github.com/Airreload/flutter) at commit
@@ -26,6 +26,8 @@ airreload/
 └── flutter/
 ```
 
+### macOS and Linux
+
 ```sh
 mkdir airreload && cd airreload
 git clone https://github.com/Airreload/flutter.git
@@ -37,14 +39,37 @@ cd cli
 ./bin/airreload doctor
 ```
 
-The compiled executable must remain at `cli/bin/airreload` in this layout.
+### Windows PowerShell
+
+```powershell
+mkdir airreload
+cd airreload
+git clone https://github.com/Airreload/flutter.git
+git -C flutter checkout 558d79bc24bfcadeff45b93a7d971ae670a1e8fc
+git clone https://github.com/Airreload/cli.git
+cd cli
+..\flutter\bin\dart.bat pub get
+..\flutter\bin\dart.bat compile exe bin\airreload.dart -o bin\airreload.exe
+.\bin\airreload.exe doctor
+```
+
+The compiled executable must remain at `cli/bin/airreload` on macOS/Linux or
+`cli\bin\airreload.exe` on Windows in this layout.
 
 ## Run
 
 From the CLI repository:
 
+macOS/Linux:
+
 ```sh
 ./bin/airreload run --project /path/to/flutter-app
+```
+
+Windows PowerShell:
+
+```powershell
+.\bin\airreload.exe run --project C:\path\to\flutter-app
 ```
 
 Scan the displayed QR code in Airreload Go and confirm pairing. Go reports the
@@ -75,7 +100,10 @@ runtime, run a fresh pairing/build and install the new debug APK once.
 Open an issue before making a large change. For code changes, run:
 
 ```sh
-../flutter/bin/dart format --set-exit-if-changed bin lib test
-../flutter/bin/dart analyze --fatal-infos
-../flutter/bin/dart test
+dart format --set-exit-if-changed bin lib test
+dart analyze --fatal-infos
+dart test
 ```
+
+Pull requests run the same checks and compile/smoke-test a native executable on
+macOS, Linux, and Windows.

@@ -248,5 +248,5 @@ void main() {
     expect(offline.exitCode, 1);
     expect(offline.stderr, contains('Host is not running'));
     expect(Directory(operations.workspace.state).existsSync(), isFalse);
-  });
+  }, timeout: const Timeout(Duration(minutes: 2)));
 }

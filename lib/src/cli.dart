@@ -3,8 +3,10 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:args/command_runner.dart';
 import 'package:io/io.dart';
+import 'package:path/path.dart' as p;
 
 import 'host.dart';
+import 'platform_support.dart';
 import 'run_workflow.dart';
 import 'workspace.dart';
 
@@ -17,7 +19,7 @@ class Operations {
   Future<Map<String, dynamic>> session() => workspace.activeSession();
   Future<void> host(int port) => runHost(workspace, port);
   Future<int> attach(String project, List<String> arguments) async {
-    final child = await Process.start(
+    final child = await startProcess(
       workspace.flutter,
       arguments,
       workingDirectory: project,
@@ -34,14 +36,13 @@ class Operations {
     }
 
     report(
-      Platform.isMacOS || Platform.isLinux,
-      'Local host supports macOS/Linux.',
+      isSupportedHost,
+      'Local host supports macOS, Linux, and Windows '
+      '(running on ${Platform.operatingSystem}).',
     );
-    for (final tool in ['git', 'openssl']) {
+    for (final tool in ['git']) {
       try {
-        final result = await Process.run(tool, [
-          tool == 'git' ? '--version' : 'version',
-        ]);
+        final result = await runProcess(tool, ['--version']);
         report(result.exitCode == 0, '$tool available');
       } on ProcessException {
         report(false, '$tool missing');
@@ -50,9 +51,9 @@ class Operations {
     final sdkExists = await File(workspace.flutter).exists();
     report(sdkExists, 'Flutter SDK: ${workspace.flutter}');
     if (sdkExists) {
-      final head = await Process.run('git', [
+      final head = await runProcess('git', [
         '-C',
-        '${workspace.root}/flutter',
+        p.join(workspace.root, 'flutter'),
         'rev-parse',
         'HEAD',
       ]);
@@ -60,7 +61,7 @@ class Operations {
         head.exitCode == 0 && head.stdout.toString().trim() == sdkCommit,
         'Expected patched Flutter 3.47.2 base, commit $sdkCommit',
       );
-      final help = await Process.run(workspace.flutter, ['attach', '--help']);
+      final help = await runProcess(workspace.flutter, ['attach', '--help']);
       report(
         help.exitCode == 0 && help.stdout.toString().contains('--airreload'),
         'Patched attach --airreload available',
@@ -134,8 +135,7 @@ class AirreloadRunner extends CommandRunner<int> {
       ..addMultiOption(
         'dart-define-from-file',
         splitCommas: false,
-        help:
-            'Definitions file passed to build and attach, relative to the app directory.',
+        help: 'Definitions file passed to build and attach, relative to the app directory.',
       )
       ..addOption(
         'wait-timeout',
@@ -160,8 +160,8 @@ class AirreloadRunner extends CommandRunner<int> {
       'host',
       'Start the TLS tunnel host. Creates private credentials on first use.',
       (args) async {
-        if (!Platform.isMacOS && !Platform.isLinux) {
-          throw StateError('Host currently supports macOS/Linux.');
+        if (!isSupportedHost) {
+          throw StateError('Host supports macOS, Linux, and Windows.');
         }
         final port = int.tryParse(args['port'] as String);
         if (port == null || port < 1 || port > 65535) {
@@ -234,7 +234,8 @@ class AirreloadRunner extends CommandRunner<int> {
       'Attach to a connected compatible app for hot reload, hot restart, and DevTools. Does not install or launch the app.',
       (args) async {
         final project = args['project'] as String?;
-        if (project == null || !await File('$project/pubspec.yaml').exists()) {
+        if (project == null ||
+            !await File(p.join(project, 'pubspec.yaml')).exists()) {
           throw UsageException(
             'Provide --project pointing to the matching Flutter source directory (with pubspec.yaml).',
             usage,
