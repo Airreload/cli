@@ -181,6 +181,7 @@ class RunWorkflow {
     SessionHost? host;
     ApkServer? download;
     PairingServer? pairing;
+    PairingPageServer? pairingPage;
     subscriptions.addAll(
       watchTermination(() {
         if (!_cancelled.isCompleted) _cancelled.complete();
@@ -226,15 +227,18 @@ class RunWorkflow {
         'host': address,
       });
       final pairingUrl = pairing.url(address);
-      final qrPage = File(p.join(directory.path, 'pair.html'));
-      await qrPage.writeAsString(qrPairingPage(pairingUrl));
-      final openedQrPage = await openQrPage(qrPage);
+      final activePairing = pairing;
+      pairingPage = await PairingPageServer.start(
+        pairingUrl,
+        () => activePairing.pageState,
+      );
+      final openedQrPage = await openQrPage(pairingPage.url);
       stdout.writeln(
         openedQrPage
             ? '\nScan the pairing QR with Airreload Go, then confirm pairing on your phone.'
             : '\nOpen the pairing QR page below, scan it with Airreload Go, then confirm pairing on your phone.',
       );
-      stdout.writeln('QR page: ${qrPage.absolute.uri}');
+      stdout.writeln('QR page: ${pairingPage.url}');
       if (stdout.hasTerminal && stdout.supportsAnsiEscapes) {
         final qr = terminalQr(pairingUrl.toString());
         final width = qr
@@ -364,7 +368,11 @@ class RunWorkflow {
         await subscription.cancel();
       }
       try {
-        await download?.close();
+        try {
+          await pairingPage?.close();
+        } finally {
+          await download?.close();
+        }
       } finally {
         try {
           await pairing?.close();
