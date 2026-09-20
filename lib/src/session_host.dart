@@ -277,6 +277,25 @@ class PairingServer {
 
   Future<List<String>> waitForPhone() => _phone.future;
 
+  Map<String, String> get pageState {
+    if (_failure case final message?) {
+      return {'state': 'error', 'message': message};
+    }
+    if (_download != null) {
+      return {
+        'state': 'ready',
+        'message': 'Airreload Go will download your app automatically. Approve installation on your phone, then open your app.',
+      };
+    }
+    if (_abis != null) {
+      return {
+        'state': 'building',
+        'message': 'Your phone is connected. The download will start automatically when the build is ready.',
+      };
+    }
+    return {'state': 'waiting', 'message': ''};
+  }
+
   void publishDownload(Uri url) {
     if (_abis == null) throw StateError('Cannot publish before a phone pairs.');
     _download = url;
