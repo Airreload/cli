@@ -114,6 +114,45 @@ void main() {
   });
 
   test(
+    'unsupported detected version automatically selects the closest release',
+    () async {
+      final detectedVersions = {
+        '3.44.2': '3.44.9',
+        '3.45.0': '3.44.9',
+        '3.46.0': '3.47.5',
+      };
+      for (final entry in detectedVersions.entries) {
+        final manager = FlutterSdkManager(
+          temp.path,
+          logger,
+          command: (executable, args, {workingDirectory}) async =>
+              ProcessResult(
+                1,
+                0,
+                jsonEncode({'frameworkVersion': entry.key}),
+                '',
+              ),
+        );
+        expect((await manager.select(project)).version, entry.value);
+      }
+    },
+  );
+
+  test(
+    'missing detected version automatically selects the latest release',
+    () async {
+      final manager = FlutterSdkManager(
+        temp.path,
+        logger,
+        command: (executable, args, {workingDirectory}) async {
+          throw const ProcessException('flutter', ['--version']);
+        },
+      );
+      expect(await manager.select(project), same(flutterReleases.first));
+    },
+  );
+
+  test(
     'matching bundled runtime is verified and reused without downloading',
     () async {
       final fake = FakeSdkCommands();

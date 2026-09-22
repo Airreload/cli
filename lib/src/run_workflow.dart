@@ -272,7 +272,6 @@ class RunWorkflow {
       final session = SessionWorkspace(workspace.root, directory.path);
       host = await SessionHost.start(session);
       pairing = await PairingServer.start();
-      logger.info('Preparing your app for this session ($address)…');
       final prepared = await PreparedProject.create(
         source: source,
         destination: p.join(directory.path, 'project'),

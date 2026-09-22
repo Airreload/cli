@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:mason_logger/mason_logger.dart';
 import 'package:path/path.dart' as p;
 import 'package:pub_semver/pub_semver.dart';
@@ -194,47 +193,49 @@ class FlutterSdkManager {
     } on FormatException {
       // FVM also accepts channel names and commit revisions.
     }
-    final sameLine = choices.where((r) {
-      final version = Version.parse(r.version);
-      return version.major == detectedVersion?.major &&
-          version.minor == detectedVersion?.minor;
-    });
-    final proposed = sameLine.firstOrNull ?? choices.first;
-    final selectionKey = sha256
-        .convert(utf8.encode('${p.normalize(p.absolute(project))}\n$detected'))
-        .toString();
-    final saved = File(p.join(cache, 'choices', '$selectionKey.json'));
-    if (await saved.exists()) {
-      try {
-        final previous = jsonDecode(await saved.readAsString());
-        for (final release in choices) {
-          if (previous is Map && previous['version'] == release.version) {
-            logger.info('Using previously selected Flutter ${release.version}');
-            return release;
-          }
-        }
-      } on FormatException {
-        // An incomplete saved choice is safe to ignore.
-      }
-    }
+    final proposed = detectedVersion == null
+        ? choices.first
+        : choices.reduce((closest, candidate) {
+            final target = detectedVersion!;
+            final closestVersion = Version.parse(closest.version);
+            final candidateVersion = Version.parse(candidate.version);
+            final closestDistance = (
+              (closestVersion.major - target.major).abs(),
+              (closestVersion.minor - target.minor).abs(),
+              (closestVersion.patch - target.patch).abs(),
+            );
+            final candidateDistance = (
+              (candidateVersion.major - target.major).abs(),
+              (candidateVersion.minor - target.minor).abs(),
+              (candidateVersion.patch - target.patch).abs(),
+            );
+            if (candidateDistance.$1 != closestDistance.$1) {
+              return candidateDistance.$1 < closestDistance.$1
+                  ? candidate
+                  : closest;
+            }
+            if (candidateDistance.$2 != closestDistance.$2) {
+              return candidateDistance.$2 < closestDistance.$2
+                  ? candidate
+                  : closest;
+            }
+            if (candidateDistance.$3 != closestDistance.$3) {
+              return candidateDistance.$3 < closestDistance.$3
+                  ? candidate
+                  : closest;
+            }
+            return candidateVersion > closestVersion ? candidate : closest;
+          });
     logger.info(
       detected == null
           ? 'No Flutter installation detected.'
           : 'Airreload does not have an exact release for Flutter $detected.',
     );
-    logger.info('Available alternative: Flutter ${proposed.version}');
-    if (!stdin.hasTerminal || !stdout.hasTerminal) {
-      throw StateError(
-        'Choose explicitly with --flutter-version ${proposed.version}.',
-      );
-    }
-    if (!logger.confirm(
-      'Use Flutter ${proposed.version} for this project’s Airreload runs?',
-    )) {
-      throw StateError('No Flutter version selected.');
-    }
-    await saved.parent.create(recursive: true);
-    await saved.writeAsString(jsonEncode({'version': proposed.version}));
+    logger.info(
+      detectedVersion == null
+          ? 'Picking Flutter ${proposed.version}, the latest compatible Airreload version.'
+          : 'Picking Flutter ${proposed.version}, the closest compatible Airreload version.',
+    );
     return proposed;
   }
 

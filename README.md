@@ -83,9 +83,10 @@ airreload run --flutter-version 3.38.10
 This overrides FVM and installed Flutter for the run. An unavailable version
 fails without falling back. Project dependency constraints still apply.
 Without the flag, Airreload checks FVM configuration first, then a configured
-VS Code SDK or Flutter on PATH. If the exact version is unavailable, it asks
-before using an alternative and remembers the choice for that project/version.
-Noninteractive runs must supply the suggested explicit version.
+VS Code SDK or Flutter on PATH. If the exact version is unavailable, Airreload
+automatically picks the closest compatible supported version and reports the
+decision. If no Flutter version is detected, it picks the latest compatible
+supported version.
 
 Airreload downloads an immutable, commit-verified SDK release on first use and
 reuses it from the installation's `sdks/` directory. The CLI keeps its own Dart
