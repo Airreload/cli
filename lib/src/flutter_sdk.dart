@@ -82,6 +82,20 @@ typedef SdkCommand = Future<ProcessResult> Function(
   String? workingDirectory,
 });
 
+Map<String, dynamic> flutterVersionMetadata(String output) {
+  // A fresh Flutter launcher can print SDK download/bootstrap progress before
+  // the machine-readable version object, including curl's progress meter.
+  final start = RegExp(r'^\s*\{', multiLine: true).firstMatch(output);
+  if (start == null) {
+    throw const FormatException('Flutter returned no version metadata');
+  }
+  final value = jsonDecode(output.substring(start.start));
+  if (value is! Map<String, dynamic>) {
+    throw const FormatException('Invalid Flutter version metadata');
+  }
+  return value;
+}
+
 class FlutterSdkManager {
   FlutterSdkManager(this.root, this.logger, {SdkCommand? command})
     : command = command ?? runProcess;
@@ -119,8 +133,9 @@ class FlutterSdkManager {
         '--machine',
       ], workingDirectory: project);
       if (result.exitCode != 0) return null;
-      final document = jsonDecode(result.stdout.toString());
-      return document is Map ? document['frameworkVersion'] as String? : null;
+      final document = flutterVersionMetadata(result.stdout.toString());
+      final version = document['frameworkVersion'];
+      return version is String ? version : null;
     } on ProcessException {
       return null;
     } on FormatException {
@@ -284,6 +299,25 @@ class FlutterSdkManager {
         'Flutter ${release.version} has no published Airreload revision yet.',
       );
     }
+    final bundled = p.join(root, 'flutter');
+    final bundledVersion = File(
+      p.join(bundled, 'bin', 'internal', 'airreload.version'),
+    );
+    if (await bundledVersion.exists() &&
+        (await bundledVersion.readAsString()).trim() == release.version &&
+        await File(
+          p.join(
+            bundled,
+            'bin',
+            'cache',
+            'dart-sdk',
+            'bin',
+            Platform.isWindows ? 'dart.exe' : 'dart',
+          ),
+        ).exists()) {
+      await _verify(bundled, release);
+      return bundled;
+    }
     await Directory(cache).create(recursive: true);
     final name = '${release.version}-${release.commit.substring(0, 12)}';
     final destination = p.join(cache, name);
@@ -340,8 +374,7 @@ class FlutterSdkManager {
           '--version',
           '--machine',
         ], progressMessage: 'Preparing Flutter ${release.version} tools');
-        final metadata =
-            jsonDecode(version.stdout.toString()) as Map<String, dynamic>;
+        final metadata = flutterVersionMetadata(version.stdout.toString());
         if (metadata['frameworkRevision'] != release.commit ||
             metadata['frameworkVersion'] != release.version) {
           throw StateError(

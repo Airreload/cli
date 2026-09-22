@@ -19,6 +19,19 @@ void main() {
   });
   tearDown(() => temp.delete(recursive: true));
 
+  test('version metadata accepts first-run download output before JSON', () {
+    expect(
+      flutterVersionMetadata(
+        '  % Total    % Received\r100 215M\nBuilding flutter tool...\n{\n"frameworkVersion":"3.47.5"\n}\n',
+      ),
+      containsPair('frameworkVersion', '3.47.5'),
+    );
+    expect(
+      () => flutterVersionMetadata('download failed'),
+      throwsFormatException,
+    );
+  });
+
   Future<ProcessResult> forbidden(
     String executable,
     List<String> args, {
@@ -99,6 +112,34 @@ void main() {
     );
     expect((await manager.select(project)).version, '3.41.9');
   });
+
+  test(
+    'matching bundled runtime is verified and reused without downloading',
+    () async {
+      final fake = FakeSdkCommands();
+      final sdk = p.join(temp.path, 'flutter');
+      final version = File(p.join(sdk, 'bin', 'internal', 'airreload.version'));
+      await version.parent.create(recursive: true);
+      await version.writeAsString(fake.release.version);
+      final dart = File(
+        p.join(
+          sdk,
+          'bin',
+          'cache',
+          'dart-sdk',
+          'bin',
+          Platform.isWindows ? 'dart.exe' : 'dart',
+        ),
+      );
+      await dart.parent.create(recursive: true);
+      await dart.writeAsString('fixture');
+      final manager = FlutterSdkManager(temp.path, logger, command: fake.run);
+      expect(await manager.install(fake.release), sdk);
+      expect(fake.clones, 0);
+      fake.wrongCommit = true;
+      await expectLater(manager.install(fake.release), throwsStateError);
+    },
+  );
 
   test('SDK cache verifies exact identity, reuses a ready install, and rejects edits', () async {
     final fake = FakeSdkCommands();
@@ -185,10 +226,8 @@ class FakeSdkCommands {
     } else if (args.first == '--version') {
       bootstraps++;
       code = failBootstrap ? 1 : 0;
-      output = jsonEncode({
-        'frameworkRevision': release.commit,
-        'frameworkVersion': release.version,
-      });
+      output =
+          'Downloading SDK...\n${jsonEncode({'frameworkRevision': release.commit, 'frameworkVersion': release.version})}';
     } else if (args.first == 'attach') {
       output = '--airreload --airreload-target-platform';
     } else if (!args.contains('fetch')) {
