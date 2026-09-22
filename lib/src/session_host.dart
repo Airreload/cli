@@ -245,6 +245,10 @@ class ApkServer {
 /// required, it accepts one ABI report, and it exposes no files or directories.
 class PairingServer {
   PairingServer._(this.server, this.route, this.token) {
+    // A preparation failure can close the server before waitForPhone() is
+    // reached. Keep that close error available to callers without letting an
+    // otherwise unobserved future mask the actual preparation error.
+    _phone.future.ignore();
     _subscription = server.listen((request) => unawaited(_respond(request)));
   }
 

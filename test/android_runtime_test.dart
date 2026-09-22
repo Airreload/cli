@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:airreload/src/android_runtime.dart';
+import 'package:airreload/src/android_runtime_sources.dart';
 import 'package:airreload/src/runtime_template.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -57,11 +58,18 @@ void main() {
     },
   );
 
-  test('Android native runtime sources exist beside the CLI', () {
-    final source = androidRuntimeSourceDirectory(Directory.current.parent.path);
+  test('Android native runtime sources are embedded in the CLI', () {
+    final source = p.join(
+      Directory.current.parent.path,
+      'cli',
+      'lib',
+      'src',
+      'android',
+    );
     for (final name in androidRuntimeJavaFiles) {
       final file = File(p.join(source, name));
       expect(file.existsSync(), isTrue, reason: file.path);
+      expect(androidRuntimeSources[name], file.readAsStringSync());
     }
     expect(
       File(p.join(source, 'AirreloadNativeTunnel.java')).readAsStringSync(),
@@ -72,4 +80,38 @@ void main() {
       contains('AirreloadNativeTunnel.start'),
     );
   });
+
+  test(
+    'embedded Android runtime can be injected without a CLI checkout',
+    () async {
+      final destination = await Directory.systemTemp.createTemp(
+        'airreload-android-runtime-',
+      );
+      addTearDown(() => destination.delete(recursive: true));
+
+      await injectAirreloadAndroidRuntime(
+        destination: destination.path,
+        host: '192.0.2.3',
+        port: 12345,
+        token: 'synthetic-session',
+        certificatePin: 'AQID',
+      );
+
+      for (final name in androidRuntimeJavaFiles) {
+        final generated = File(
+          p.join(
+            destination.path,
+            'android',
+            'app',
+            'src',
+            'debug',
+            'java',
+            androidRuntimeJavaPackagePath,
+            name,
+          ),
+        );
+        expect(await generated.readAsString(), androidRuntimeSources[name]);
+      }
+    },
+  );
 }

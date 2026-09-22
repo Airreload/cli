@@ -12,14 +12,20 @@ String workspaceRootFromScript(Uri script, {Map<String, String>? environment}) {
   if (configured != null && configured.isNotEmpty) {
     return p.normalize(p.absolute(configured));
   }
-  var directory = File.fromUri(script).absolute.parent;
+  final scriptFile = File.fromUri(script).absolute;
+  final installedRoot = scriptFile.parent.parent;
+  if (p.basename(scriptFile.parent.path).toLowerCase() == 'bin' &&
+      File(p.join(installedRoot.path, '.airreload-installer')).existsSync()) {
+    return installedRoot.path;
+  }
+  var directory = scriptFile.parent;
   while (directory.parent.path != directory.path) {
     if (p.basename(directory.path).toLowerCase() == 'cli') {
       return directory.parent.path;
     }
     directory = directory.parent;
   }
-  return File.fromUri(script).absolute.parent.parent.parent.path;
+  return scriptFile.parent.parent.parent.path;
 }
 
 String flutterLauncher(String root, {bool? windows}) => p.join(

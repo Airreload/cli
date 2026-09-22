@@ -159,7 +159,6 @@ class PreparedProject {
     );
     await injectAirreloadAndroidRuntime(
       destination: destination,
-      workspaceRoot: sdk.root,
       host: host,
       port: port,
       token: token,

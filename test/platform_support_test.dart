@@ -17,6 +17,11 @@ void main() {
       final nestedBinary = File(
         p.join(cli.path, 'build', 'verification', 'airreload'),
       );
+      final installedBinary = File(
+        p.join(temporary.path, 'installation', 'bin', 'airreload'),
+      );
+      await File(p.join(temporary.path, 'installation', '.airreload-installer'))
+          .create(recursive: true);
       expect(
         workspaceRootFromScript(binScript.absolute.uri, environment: const {}),
         temporary.path,
@@ -27,6 +32,13 @@ void main() {
           environment: const {},
         ),
         temporary.path,
+      );
+      expect(
+        workspaceRootFromScript(
+          installedBinary.absolute.uri,
+          environment: const {},
+        ),
+        p.join(temporary.path, 'installation'),
       );
       expect(
         workspaceRootFromScript(

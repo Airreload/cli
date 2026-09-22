@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'android_runtime_sources.dart';
+
 const androidRuntimeJavaFiles = [
   'AirreloadInitProvider.java',
   'AirreloadNativeTunnel.java',
@@ -11,9 +13,6 @@ const androidRuntimeJavaFiles = [
 const androidRuntimeJavaPackagePath = 'dev/airreload/runtime';
 
 const airreloadVmEndpointFileName = 'airreload-vm.json';
-
-String androidRuntimeSourceDirectory(String workspaceRoot) =>
-    p.join(workspaceRoot, 'cli', 'lib', 'src', 'android');
 
 String airreloadSessionAsset({
   required String host,
@@ -59,13 +58,11 @@ String mergeAirreloadDebugManifest(String text) {
 
 Future<void> injectAirreloadAndroidRuntime({
   required String destination,
-  required String workspaceRoot,
   required String host,
   required int port,
   required String token,
   required String certificatePin,
 }) async {
-  final source = Directory(androidRuntimeSourceDirectory(workspaceRoot));
   final java = Directory(
     p.join(
       destination,
@@ -79,11 +76,11 @@ Future<void> injectAirreloadAndroidRuntime({
   );
   await java.create(recursive: true);
   for (final name in androidRuntimeJavaFiles) {
-    final file = File(p.join(source.path, name));
-    if (!await file.exists()) {
-      throw StateError('Missing Airreload Android runtime file: ${file.path}');
+    final source = androidRuntimeSources[name];
+    if (source == null) {
+      throw StateError('Missing embedded Airreload Android runtime: $name');
     }
-    await file.copy(p.join(java.path, name));
+    await File(p.join(java.path, name)).writeAsString(source);
   }
   final assets = Directory(
     p.join(destination, 'android', 'app', 'src', 'debug', 'assets'),

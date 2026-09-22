@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -6,6 +7,19 @@ import 'package:airreload/src/session_host.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test(
+    'closing before a phone waits does not report an uncaught error',
+    () async {
+      final errors = <Object>[];
+      await runZonedGuarded<Future<void>>(() async {
+        final pairing = await PairingServer.start();
+        await pairing.close();
+        await Future<void>.delayed(Duration.zero);
+      }, (error, _) => errors.add(error));
+      expect(errors, isEmpty);
+    },
+  );
+
   test('live page follows pairing, build, ready and failure without exposing APK URLs', () async {
     final pairing = await PairingServer.start();
     final phone = pairing.waitForPhone();
