@@ -2,10 +2,11 @@ import 'dart:io';
 
 import 'package:args/args.dart';
 import 'package:args/command_runner.dart';
-import 'package:io/io.dart';
+import 'package:mason_logger/mason_logger.dart';
 import 'package:path/path.dart' as p;
 
 import 'host.dart';
+import 'flutter_sdk.dart';
 import 'platform_support.dart';
 import 'run_workflow.dart';
 import 'workspace.dart';
@@ -13,8 +14,10 @@ import 'workspace.dart';
 class Operations {
   Operations(this.workspace);
   final Workspace workspace;
+  late final Logger logger = Logger();
 
-  Future<int> runApp(RunOptions options) => RunWorkflow(workspace).run(options);
+  Future<int> runApp(RunOptions options) =>
+      RunWorkflow(workspace, logger: logger).run(options);
 
   Future<Map<String, dynamic>> session() => workspace.activeSession();
   Future<void> host(int port) => runHost(workspace, port);
@@ -31,7 +34,11 @@ class Operations {
   Future<int> doctor() async {
     var failed = false;
     void report(bool ok, String message) {
-      stdout.writeln('${ok ? 'OK' : 'FAIL'}  $message');
+      if (ok) {
+        logger.success('✓ $message');
+      } else {
+        logger.err('✗ $message');
+      }
       failed |= !ok;
     }
 
@@ -53,13 +60,18 @@ class Operations {
     if (sdkExists) {
       final head = await runProcess('git', [
         '-C',
-        p.join(workspace.root, 'flutter'),
+        workspace.sdkRoot,
         'rev-parse',
         'HEAD',
       ]);
       report(
-        head.exitCode == 0 && head.stdout.toString().trim() == sdkCommit,
-        'Expected patched Flutter 3.47.2 base, commit $sdkCommit',
+        head.exitCode == 0 &&
+            [
+              sdkCommit,
+              'a591abe6aabb8e91947f3c34cbc718db9ddc06ae',
+              ...flutterReleases.map((release) => release.commit),
+            ].contains(head.stdout.toString().trim()),
+        'Recognized Airreload Flutter SDK commit',
       );
       final help = await runProcess(workspace.flutter, ['attach', '--help']);
       report(
@@ -67,8 +79,8 @@ class Operations {
         'Patched attach --airreload available',
       );
     }
-    stdout.writeln('Host was not started; no phone connection attempted.');
-    stdout.writeln(
+    logger.info('Host was not started; no phone connection attempted.');
+    logger.info(
       'Run airreload run from a Flutter Android app; Airreload generates the debug integration.',
     );
     return failed ? ExitCode.unavailable.code : ExitCode.success.code;
@@ -103,11 +115,18 @@ class AirreloadRunner extends CommandRunner<int> {
             defines: args['dart-define'] as List<String>,
             defineFiles: args['dart-define-from-file'] as List<String>,
             waitSeconds: wait,
+            flutterVersion: args['flutter-version'] as String?,
           ),
         );
       },
     );
     run.argParser
+      ..addOption(
+        'flutter-version',
+        help:
+            'Use exactly this Airreload Flutter version; overrides FVM and PATH with no fallback. Available: ${flutterReleases.map((r) => r.version).join(', ')}.',
+        allowed: flutterReleases.map((r) => r.version).toList(),
+      )
       ..addOption(
         'project',
         help:
@@ -291,18 +310,18 @@ Future<int> runCli(List<String> args, Operations operations) async {
   try {
     return await AirreloadRunner(operations).run(args) ?? 0;
   } on UsageException catch (error) {
-    stderr.writeln(error);
+    operations.logger.err(error.toString());
     return ExitCode.usage.code;
   } on StateError catch (error) {
-    stderr.writeln(error.message);
+    operations.logger.err(error.message);
     return 1;
   } on SocketException catch (error) {
-    stderr.writeln(
+    operations.logger.err(
       'Network operation failed: ${error.message}. The requested port may already be in use.',
     );
     return ExitCode.unavailable.code;
   } on Object catch (error) {
-    stderr.writeln('Airreload failed (${error.runtimeType}).');
+    operations.logger.err('Airreload failed (${error.runtimeType}).');
     return 1;
   }
 }

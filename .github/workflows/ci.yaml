@@ -32,7 +32,7 @@ jobs:
           sdk: 3.13.2
       - run: dart pub get
       - name: Check formatting
-        run: dart format --output=none --set-exit-if-changed bin lib test
+        run: dart format --output=none --set-exit-if-changed bin lib test tool
       - name: Analyze
         run: dart analyze --fatal-infos
       - name: Test

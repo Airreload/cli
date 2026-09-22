@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:mason_logger/mason_logger.dart';
 import 'package:path/path.dart' as p;
 import 'package:qr/qr.dart';
 
 import 'instrumentation.dart';
+import 'flutter_sdk.dart';
 import 'platform_support.dart';
 import 'qr_display.dart';
 import 'session_host.dart';
@@ -120,6 +123,7 @@ class RunOptions {
     this.defines = const [],
     this.defineFiles = const [],
     this.waitSeconds = 600,
+    this.flutterVersion,
   });
   final String project;
   final String target;
@@ -128,6 +132,7 @@ class RunOptions {
   final List<String> defines;
   final List<String> defineFiles;
   final int waitSeconds;
+  final String? flutterVersion;
 
   List<String> get dartArguments => [
     for (final value in defines) '--dart-define=$value',
@@ -150,15 +155,39 @@ String? flutterAndroidTargetForAbis(Iterable<String> abis) {
 }
 
 class RunWorkflow {
-  RunWorkflow(this.workspace);
+  RunWorkflow(this.workspace, {Logger? logger}) : logger = logger ?? Logger();
   final Workspace workspace;
+  final Logger logger;
+  late final Workspace _sdk;
   final _cancelled = Completer<void>();
   Process? _process;
+
+  Future<ProcessResult> _sdkCommand(
+    String executable,
+    List<String> arguments, {
+    String? workingDirectory,
+  }) async {
+    if (_cancelled.isCompleted) throw _Cancelled();
+    final child = await startProcess(
+      executable,
+      arguments,
+      workingDirectory: workingDirectory,
+    );
+    _process = child;
+    if (_cancelled.isCompleted) stopProcess(child);
+    final output = child.stdout.transform(utf8.decoder).join();
+    final errors = child.stderr.transform(utf8.decoder).join();
+    final code = await child.exitCode;
+    final result = ProcessResult(child.pid, code, await output, await errors);
+    _process = null;
+    if (_cancelled.isCompleted) throw _Cancelled();
+    return result;
+  }
 
   Future<int> _command(List<String> arguments, String directory) async {
     if (_cancelled.isCompleted) throw _Cancelled();
     final child = await startProcess(
-      workspace.flutter,
+      _sdk.flutter,
       arguments,
       workingDirectory: directory,
       mode: ProcessStartMode.inheritStdio,
@@ -176,6 +205,32 @@ class RunWorkflow {
     _cancelled.future.then<T>((_) => throw _Cancelled()),
   ]);
 
+  Future<T> _waitWithProgress<T>(
+    String message,
+    String completed,
+    Future<T> Function() action,
+  ) async {
+    final progress = stdout.hasTerminal && stdout.supportsAnsiEscapes
+        ? logger.progress(message)
+        : null;
+    if (progress == null) logger.info('$message…');
+    try {
+      final result = await _untilCancelled(action());
+      if (progress != null) {
+        progress.complete(completed);
+      } else {
+        logger.success('✓ $completed');
+      }
+      return result;
+    } on _Cancelled {
+      progress?.cancel();
+      rethrow;
+    } catch (_) {
+      progress?.fail();
+      rethrow;
+    }
+  }
+
   Future<int> run(RunOptions options) async {
     final subscriptions = <StreamSubscription<ProcessSignal>>[];
     SessionHost? host;
@@ -190,12 +245,26 @@ class RunWorkflow {
       }),
     );
     try {
-      final address = await selectComputerAddress(options.host);
       final source = p.normalize(p.absolute(options.project));
       if (!await File(p.join(source, 'pubspec.yaml')).exists() ||
           !await Directory(p.join(source, 'android')).exists()) {
         throw StateError('Run from an existing Flutter Android app directory.');
       }
+      final manager = FlutterSdkManager(
+        workspace.root,
+        logger,
+        command: _sdkCommand,
+      );
+      final release = await manager.select(
+        source,
+        requested: options.flutterVersion,
+      );
+      logger.success(
+        '✓ Airreload supports Flutter ${release.version} (preview)',
+      );
+      _sdk = Workspace(workspace.root, sdkRoot: await manager.install(release));
+      if (_cancelled.isCompleted) throw _Cancelled();
+      final address = await selectComputerAddress(options.host);
       await workspace.preparePrivateDirectory();
       final runs = await Directory(p.join(workspace.state, 'runs'))
           .create(recursive: true);
@@ -203,14 +272,12 @@ class RunWorkflow {
       final session = SessionWorkspace(workspace.root, directory.path);
       host = await SessionHost.start(session);
       pairing = await PairingServer.start();
-      stdout.writeln(
-        'Preparing your app for this session ($address). Existing hosts are unchanged.',
-      );
+      logger.info('Preparing your app for this session ($address)…');
       final prepared = await PreparedProject.create(
         source: source,
         destination: p.join(directory.path, 'project'),
         target: options.target,
-        sdk: workspace,
+        sdk: _sdk,
         host: address,
         port: host.server.port,
         token: host.token,
@@ -225,6 +292,9 @@ class RunWorkflow {
         'source': source,
         'target': prepared.target,
         'host': address,
+        'flutterVersion': release.version,
+        'flutterCommit': release.commit,
+        'flutterSdk': _sdk.sdkRoot,
       });
       final pairingUrl = pairing.url(address);
       final activePairing = pairing;
@@ -233,12 +303,12 @@ class RunWorkflow {
         () => activePairing.pageState,
       );
       final openedQrPage = await openQrPage(pairingPage.url);
-      stdout.writeln(
+      logger.info(
         openedQrPage
             ? '\nScan the pairing QR with Airreload Go, then confirm pairing on your phone.'
             : '\nOpen the pairing QR page below, scan it with Airreload Go, then confirm pairing on your phone.',
       );
-      stdout.writeln('QR page: ${pairingPage.url}');
+      logger.info('QR page: ${pairingPage.url}');
       if (stdout.hasTerminal && stdout.supportsAnsiEscapes) {
         final qr = terminalQr(pairingUrl.toString());
         final width = qr
@@ -247,15 +317,14 @@ class RunWorkflow {
             .replaceAll(RegExp(r'\x1b\[[0-9;]*m'), '')
             .length;
         if (stdout.terminalColumns > width) {
-          stdout.writeln('Terminal QR (if needed):');
+          logger.info('Terminal QR (if needed):');
           stdout.write(qr);
         }
       }
-      stdout.writeln(
-        'Waiting for Airreload Go to report this phone\'s Android ABIs…',
-      );
-      final abis = await _untilCancelled(
-        pairing.waitForPhone().timeout(
+      final abis = await _waitWithProgress(
+        'Waiting for Airreload Go to pair',
+        'Phone paired',
+        () => pairing!.waitForPhone().timeout(
           Duration(seconds: options.waitSeconds),
           onTimeout: () => throw StateError(
             'No phone paired. Scan the QR with Airreload Go, confirm pairing, and check that both devices are on the same trusted network.',
@@ -270,9 +339,7 @@ class RunWorkflow {
         await _untilCancelled(Future<void>.delayed(const Duration(seconds: 3)));
         throw StateError(message);
       }
-      stdout.writeln(
-        'Paired phone ABIs: ${abis.join(', ')}. Building a $targetPlatform debug APK. Your app source and release configuration are unchanged.',
-      );
+      logger.info('Building your app for $targetPlatform…');
       final build = await _command([
         'build',
         'apk',
@@ -307,31 +374,36 @@ class RunWorkflow {
       download = await ApkServer.start(apk);
       final url = download.url(address).toString();
       pairing.publishDownload(download.url(address));
-      stdout.writeln(
-        '\nThe ABI-matched APK is ready. Airreload Go will download it automatically. Approve Android\'s install prompt, then open your app.',
+      logger.success('✓ App built');
+      logger.info(
+        'Airreload Go will download your app automatically. Approve Android\'s install prompt, then open your app.',
       );
-      stdout.writeln('Authorized download endpoint: $url');
-      stdout.writeln('APK: ${apk.path}');
-      stdout.writeln(
-        'Keep this terminal open. Waiting for the app to connect…',
-      );
+      logger.info('Authorized download endpoint: $url');
+      logger.info('APK: ${apk.path}');
+      logger.info('Keep this terminal open.');
       var failures = 0;
       while (true) {
-        final uri = await _untilCancelled(
-          host.waitForReadyApp().timeout(
+        final uri = await _waitWithProgress(
+          'Waiting for your app to connect',
+          'App connected',
+          () => host!.waitForReadyApp().timeout(
             Duration(seconds: options.waitSeconds),
             onTimeout: () => throw StateError(
               'The app\'s VM service did not become reachable. Check that the phone can reach $address, then install and open this session\'s APK. If the wrong network interface was selected, rerun with --host.',
             ),
           ),
         );
-        stdout.writeln(
-          'App connected. Starting Flutter attach; press r for hot reload, '
+        logger.info(
+          'Starting Flutter attach; press r for hot reload, '
           'R for hot restart, d to detach, or q to quit. DevTools stays on this computer.',
         );
         final connectionGeneration = host.connectionGeneration;
         final code = await _command([
-          ...attachArguments(uri.toString(), prepared.target),
+          ...attachArguments(
+            uri.toString(),
+            prepared.target,
+            targetPlatform: targetPlatform,
+          ),
           ...options.dartArguments,
         ], prepared.directory);
         if (shouldFinishAttach(
@@ -341,7 +413,7 @@ class RunWorkflow {
         )) {
           return 0;
         }
-        stdout.writeln(
+        logger.warn(
           attachEndedMessage(
             code,
             stillConnected: host.debugUri != null,
@@ -380,7 +452,7 @@ class RunWorkflow {
           await host?.close();
         }
       }
-      stdout.writeln(
+      logger.info(
         'Airreload session stopped. Its download and control endpoints are closed.',
       );
     }

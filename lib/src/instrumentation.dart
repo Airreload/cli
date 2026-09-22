@@ -46,6 +46,7 @@ const _excluded = {
   '.idea',
   'node_modules',
   '.airreload',
+  '.fvm',
 };
 
 class PreparedProject {
@@ -94,6 +95,24 @@ class PreparedProject {
     );
     await Directory(destination).create(recursive: true);
     await _copyDirectory(Directory(source), Directory(destination), source);
+    // Flutter's Gradle integration must use the SDK selected for this run,
+    // even when the source app's local.properties points at FVM or another SDK.
+    final properties = File(p.join(destination, 'android', 'local.properties'));
+    final existingProperties = await properties.exists()
+        ? await properties.readAsLines()
+        : <String>[];
+    final flutterPath = sdk.sdkRoot
+        .replaceAll('\\', '\\\\')
+        .replaceAll(':', '\\:');
+    await properties.writeAsString(
+      [
+        ...existingProperties.where(
+          (line) => !RegExp(r'^\s*flutter\.sdk\s*[:=]').hasMatch(line),
+        ),
+        'flutter.sdk=$flutterPath',
+        '',
+      ].join('\n'),
+    );
     await createDirectoryLink(
       p.join(destination, 'lib'),
       p.join(source, 'lib'),

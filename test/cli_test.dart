@@ -9,6 +9,10 @@ import 'package:test/fake.dart';
 class Capture extends Fake implements Stdout {
   final text = StringBuffer();
   @override
+  bool get supportsAnsiEscapes => false;
+  @override
+  bool get hasTerminal => false;
+  @override
   void writeln([Object? object = '']) => text.writeln(object);
   @override
   void write(Object? object) => text.write(object);
@@ -121,6 +125,17 @@ void main() {
     expect(output.text.toString(), contains('hot restart'));
     expect(output.text.toString(), contains('DevTools'));
   });
+
+  test(
+    'run forwards an exact Flutter override and rejects unavailable versions',
+    () async {
+      expect(await run(['run', '--flutter-version', '3.38.10']), 0);
+      expect(operations.runOptions!.flutterVersion, '3.38.10');
+      operations.calls.clear();
+      expect(await run(['run', '--flutter-version', '3.38']), 64);
+      expect(operations.calls, isEmpty);
+    },
+  );
 
   test('attach help mentions hot restart and DevTools', () async {
     expect(await run(['help', 'attach']), 0);

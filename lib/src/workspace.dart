@@ -8,13 +8,16 @@ import 'package:path/path.dart' as p;
 
 import 'platform_support.dart';
 
-const cliVersion = '0.2.0-beta.2';
+const cliVersion = '0.3.0-beta.1';
 const sdkCommit = '558d79bc24bfcadeff45b93a7d971ae670a1e8fc';
 
 class Workspace {
-  Workspace(this.root);
+  Workspace(this.root, {String? sdkRoot})
+    : sdkRoot = sdkRoot ?? p.join(root, 'flutter');
   final String root;
-  String get flutter => flutterLauncher(root);
+  final String sdkRoot;
+  String get flutter =>
+      p.join(sdkRoot, 'bin', Platform.isWindows ? 'flutter.bat' : 'flutter');
   String get state => p.join(root, 'cli', '.airreload');
   String get certificate => p.join(state, 'host-cert.pem');
   String get key => p.join(state, 'host-key.pem');
@@ -169,9 +172,14 @@ Uri validateDebugUrl(String value) {
   return uri;
 }
 
-List<String> attachArguments(String url, String? target) => [
+List<String> attachArguments(
+  String url,
+  String? target, {
+  String? targetPlatform,
+}) => [
   'attach',
   '--airreload',
+  if (targetPlatform != null) '--airreload-target-platform=$targetPlatform',
   '--debug-url=${validateDebugUrl(url)}',
   '--dds',
   '--devtools',

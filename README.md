@@ -3,7 +3,7 @@
 Airreload builds a Flutter Android debug APK, serves it over the local network,
 and attaches the Flutter tool for hot reload after the app opens.
 
-> **Beta:** The current version is `0.2.0-beta.2`.
+> **Beta:** The current version is `0.3.0-beta.1`.
 
 ## Requirements
 
@@ -11,8 +11,7 @@ and attaches the Flutter tool for hot reload after the app opens.
 - Git
 - An Android device on the same trusted network as the development computer, with Airreload Go installed
 - A standalone Flutter app with a top-level `main` function under `lib/`
-- The [Airreload Flutter fork](https://github.com/Airreload/flutter) at commit
-  `558d79bc24bfcadeff45b93a7d971ae670a1e8fc`
+- Airreload manages its own Flutter SDKs; no separate project Flutter or FVM installation is required. Android build tools and a suitable JDK are still required.
 
 Pub workspaces and add-to-app modules are not supported.
 
@@ -72,6 +71,28 @@ Windows PowerShell:
 .\bin\airreload.exe run --project C:\path\to\flutter-app
 ```
 
+### Select a Flutter version
+
+The preview supports Flutter **3.47.5, 3.44.9, 3.41.9, and 3.38.10**.
+To test an exact version, run:
+
+```sh
+airreload run --flutter-version 3.38.10
+```
+
+This overrides FVM and installed Flutter for the run. An unavailable version
+fails without falling back. Project dependency constraints still apply.
+Without the flag, Airreload checks FVM configuration first, then a configured
+VS Code SDK or Flutter on PATH. If the exact version is unavailable, it asks
+before using an alternative and remembers the choice for that project/version.
+Noninteractive runs must supply the suggested explicit version.
+
+Airreload downloads an immutable, commit-verified SDK release on first use and
+reuses it from the installation's `sdks/` directory. The CLI keeps its own Dart
+runtime; selecting an older Flutter never replaces it. Your project's FVM
+configuration and source files are unchanged. These are preview releases for
+manual phone acceptance testing.
+
 Scan the displayed QR code in Airreload Go and confirm pairing. Go reports the
 phone's Android ABI list (no USB debugging or developer options are needed),
 then the CLI builds the best Flutter target: `arm64-v8a`, then `armeabi-v7a`,
@@ -100,7 +121,7 @@ runtime, run a fresh pairing/build and install the new debug APK once.
 Open an issue before making a large change. For code changes, run:
 
 ```sh
-dart format --set-exit-if-changed bin lib test
+dart format --set-exit-if-changed bin lib test tool
 dart analyze --fatal-infos
 dart test
 ```

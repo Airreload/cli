@@ -96,6 +96,17 @@ void main() {
       await manifest.writeAsString(
         '<manifest><application android:label="User App"/></manifest>',
       );
+      final localProperties = File(
+        p.join(source.path, 'android', 'local.properties'),
+      );
+      await localProperties.writeAsString(
+        'sdk.dir=/android-sdk\nflutter.sdk=/old/flutter\n',
+      );
+      final oldSdk = File(
+        p.join(source.path, '.fvm', 'flutter_sdk', 'large-cache'),
+      );
+      await oldSdk.parent.create(recursive: true);
+      await oldSdk.writeAsString('must not copy');
       final prepared = await PreparedProject.create(
         source: source.path,
         destination: p.join(temp.path, 'shadow'),
@@ -108,6 +119,22 @@ void main() {
             '-----BEGIN CERTIFICATE-----\nAQID\n-----END CERTIFICATE-----',
       );
       expect(await spec.readAsString(), yaml);
+      expect(
+        await Directory(p.join(prepared.directory, '.fvm')).exists(),
+        isFalse,
+      );
+      expect(
+        await localProperties.readAsString(),
+        contains('flutter.sdk=/old/flutter'),
+      );
+      expect(
+        await File(p.join(prepared.directory, 'android', 'local.properties'))
+            .readAsString(),
+        allOf(
+          contains('sdk.dir=/android-sdk'),
+          isNot(contains('/old/flutter')),
+        ),
+      );
       expect(await main.readAsString(), 'void main() {}');
       expect(
         await File(
@@ -234,6 +261,14 @@ void main() {
           '--devtools',
           '--target=lib/main.dart',
         ],
+      );
+      expect(
+        attachArguments(
+          'http://127.0.0.1:50001/token=/',
+          'lib/main.dart',
+          targetPlatform: 'android-x64',
+        ),
+        contains('--airreload-target-platform=android-x64'),
       );
     } finally {
       await temp.delete(recursive: true);
