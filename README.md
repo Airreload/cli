@@ -129,3 +129,12 @@ dart test
 
 Pull requests run the same checks and compile/smoke-test a native executable on
 macOS, Linux, and Windows.
+
+## License
+
+Except where otherwise noted, Airreload CLI is dual-licensed under the
+[Apache License, Version 2.0](LICENSE-APACHE) or the [MIT license](LICENSE-MIT),
+at your option (`Apache-2.0 OR MIT`).
+
+See [COPYRIGHT](COPYRIGHT) for the copyright notice. Third-party components
+retain their respective licenses and copyright notices.
