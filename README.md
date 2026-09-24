@@ -55,6 +55,45 @@ cd cli
 The compiled executable must remain at `cli/bin/airreload` on macOS/Linux or
 `cli\bin\airreload.exe` on Windows in this layout.
 
+## Updates
+
+```sh
+airreload update --check  # Preview the available release and destination
+airreload update          # Install it into the current Airreload installation
+```
+
+The check shows your installed and available CLI versions, a link to the changes,
+the official release source, and the exact installation directory. An update is
+suggested only when the CLI version pinned in the official
+[installer manifest](https://github.com/Airreload/installer/blob/main/versions.env)
+is newer, using semantic version ordering (including beta versions). It does not
+select arbitrary GitHub tags or downgrade a newer local version. The installer
+manifest defines the published channel, which currently includes beta releases.
+
+Interactive `run` and `doctor` commands check at most once every 24 hours for
+installer-owned installations. Results and failed attempts are cached in
+`cli/.airreload/update-check.json`; network failures do not stop development.
+Help, version, other commands, and non-interactive invocations do not check.
+Set `AIRRELOAD_NO_UPDATE_CHECK=1` to disable automatic checks. An explicit
+`airreload update --check` always contacts the release source and returns a
+nonzero exit code if it cannot check; finding an update still returns zero.
+
+Automatic installation supports the official macOS Apple Silicon installer.
+It updates the CLI and its bundled Flutter/Dart runtime at the current installation
+path (normally `~/.airreload`), leaving shell profiles unchanged. The installer
+and manifest are fetched from the same immutable installer commit; the installer
+verifies the pinned CLI and Flutter commits, stages and validates the replacement,
+and rolls back on failure. Pairing state and downloaded project SDKs are preserved.
+Stop running Airreload sessions before updating. Afterward, use `airreload run`
+to rebuild and install a fresh debug APK if the native integration has changed.
+Airreload Go on your phone is updated separately.
+
+Source checkouts on all platforms can use `update --check`. They receive manual
+checkout/dependency/rebuild guidance; `update` will not replace a source checkout.
+Older installations without this command need one manual installer replacement
+to acquire it: pull the updated installer and run
+`./install.sh --replace --preserve-data`.
+
 ## Run
 
 From the CLI repository:

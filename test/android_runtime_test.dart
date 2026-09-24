@@ -69,7 +69,11 @@ void main() {
     for (final name in androidRuntimeJavaFiles) {
       final file = File(p.join(source, name));
       expect(file.existsSync(), isTrue, reason: file.path);
-      expect(androidRuntimeSources[name], file.readAsStringSync());
+      // Git may check out CRLF on Windows; Dart multiline strings use LF.
+      expect(
+        androidRuntimeSources[name],
+        file.readAsStringSync().replaceAll('\r\n', '\n'),
+      );
     }
     expect(
       File(p.join(source, 'AirreloadNativeTunnel.java')).readAsStringSync(),
