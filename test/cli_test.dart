@@ -30,6 +30,12 @@ class FakeOperations extends Operations {
     return 0;
   }
 
+  @override
+  Future<int> update({bool checkOnly = false}) async {
+    calls.add('update:$checkOnly');
+    return 0;
+  }
+
   Map<String, dynamic> data = {
     'port': 9443,
     'token': 'synthetic-test-pairing-token',
@@ -96,6 +102,7 @@ void main() {
         'status',
         'attach',
         'version',
+        'update',
       ]) {
         expect(output.text.toString(), contains(command));
       }
@@ -105,6 +112,13 @@ void main() {
       expect(operations.calls, isEmpty);
     },
   );
+  test('update routes checks and rejects unsupported arguments', () async {
+    expect(await run(['update', '--check']), 0);
+    expect(await run(['update']), 0);
+    expect(operations.calls, ['update:true', 'update:false']);
+    expect(await run(['update', 'extra']), 64);
+    expect(await run(['update', '--unknown']), 64);
+  });
   test(
     'run keeps caller cwd and forwards target and build definitions',
     () async {

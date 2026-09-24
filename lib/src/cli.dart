@@ -10,6 +10,7 @@ import 'flutter_sdk.dart';
 import 'platform_support.dart';
 import 'run_workflow.dart';
 import 'workspace.dart';
+import 'update.dart';
 
 class Operations {
   Operations(this.workspace);
@@ -18,6 +19,9 @@ class Operations {
 
   Future<int> runApp(RunOptions options) =>
       RunWorkflow(workspace, logger: logger).run(options);
+
+  Future<int> update({bool checkOnly = false}) =>
+      UpdateManager(workspace, logger: logger).update(checkOnly: checkOnly);
 
   Future<Map<String, dynamic>> session() => workspace.activeSession();
   Future<void> host(int port) => runHost(workspace, port);
@@ -162,6 +166,17 @@ class AirreloadRunner extends CommandRunner<int> {
         help: 'Connection and reconnection timeout in seconds.',
       );
     addCommand(run);
+    final update = ActionCommand(
+      'update',
+      'Check and install the latest official Airreload CLI release in this installation.',
+      (args) => operations.update(checkOnly: args['check'] as bool),
+    );
+    update.argParser.addFlag(
+      'check',
+      negatable: false,
+      help: 'Show installed/available versions, changes, source, and destination without installing.',
+    );
+    addCommand(update);
     addCommand(
       ActionCommand('version', 'Print the CLI version.', (args) async {
         stdout.writeln('Airreload $cliVersion');
