@@ -263,6 +263,7 @@ printf 'updated' >"$AIRRELOAD_INSTALL_ROOT/subprocess-result"
       logger.messages.where((m) => m.contains('update available')),
       hasLength(2),
     );
+    expect(logger.messages.join('\n'), contains('airreload update to install'));
     await updater.update(checkOnly: true);
     expect(requests, hasLength(4));
     now = now.add(const Duration(days: 1));
