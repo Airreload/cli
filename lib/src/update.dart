@@ -230,7 +230,7 @@ class UpdateManager {
       if (release != null && release.newerThan(currentVersion)) {
         logger.info(
           'Airreload update available: $currentVersion → ${release.version} '
-          '(official installer release). Run airreload update --check for changes and installation details.',
+          '(official installer release). Run airreload update --check to review changes, then airreload update to install.',
         );
       }
     } on Object {
