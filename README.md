@@ -3,7 +3,7 @@
 Airreload builds a Flutter Android debug APK, serves it over the local network,
 and attaches the Flutter tool for hot reload after the app opens.
 
-> **Beta:** The current version is `0.3.0-beta.1`.
+> **Beta:** The current version is `0.3.0-beta.2`.
 
 ## Requirements
 
@@ -17,43 +17,22 @@ Pub workspaces and add-to-app modules are not supported.
 
 ## Set up from source
 
-Keep the Flutter and CLI repositories next to each other:
-
-```text
-airreload/
-├── cli/
-└── flutter/
-```
-
-### macOS and Linux
+Building from source requires Dart 3.13 or later. Flutter is downloaded on demand
+when you first run Airreload in a project.
 
 ```sh
-mkdir airreload && cd airreload
-git clone https://github.com/Airreload/flutter.git
-git -C flutter checkout 558d79bc24bfcadeff45b93a7d971ae670a1e8fc
 git clone https://github.com/Airreload/cli.git
 cd cli
-../flutter/bin/dart pub get
-../flutter/bin/dart compile exe bin/airreload.dart -o bin/airreload
+dart pub get
+dart compile exe bin/airreload.dart -o bin/airreload
 ./bin/airreload doctor
 ```
 
-### Windows PowerShell
-
-```powershell
-mkdir airreload
-cd airreload
-git clone https://github.com/Airreload/flutter.git
-git -C flutter checkout 558d79bc24bfcadeff45b93a7d971ae670a1e8fc
-git clone https://github.com/Airreload/cli.git
-cd cli
-..\flutter\bin\dart.bat pub get
-..\flutter\bin\dart.bat compile exe bin\airreload.dart -o bin\airreload.exe
-.\bin\airreload.exe doctor
-```
-
-The compiled executable must remain at `cli/bin/airreload` on macOS/Linux or
-`cli\bin\airreload.exe` on Windows in this layout.
+On Windows, use `dart compile exe bin/airreload.dart -o bin/airreload.exe`
+and `.\bin\airreload.exe doctor`. Keep the executable in `cli/bin` for source
+checkouts. The public installer places the native executable in
+`~/.airreload/bin` (or `%USERPROFILE%\.airreload\bin`) and needs no Dart or Flutter
+installation. See the [installer](https://github.com/Airreload/installer).
 
 ## Updates
 
@@ -79,10 +58,10 @@ Set `AIRRELOAD_NO_UPDATE_CHECK=1` to disable automatic checks. An explicit
 nonzero exit code if it cannot check; finding an update still returns zero.
 
 Automatic installation supports the official macOS Apple Silicon installer.
-It updates the CLI and its bundled Flutter/Dart runtime at the current installation
+It updates the native CLI at the current installation
 path (normally `~/.airreload`), leaving shell profiles unchanged. The installer
 and manifest are fetched from the same immutable installer commit; the installer
-verifies the pinned CLI and Flutter commits, stages and validates the replacement,
+verifies the binary against the SHA-256 pinned in the manifest, stages and validates the replacement,
 and rolls back on failure. Pairing state and downloaded project SDKs are preserved.
 Stop running Airreload sessions before updating. Afterward, use `airreload run`
 to rebuild and install a fresh debug APK if the native integration has changed.
@@ -128,8 +107,8 @@ decision. If no Flutter version is detected, it picks the latest compatible
 supported version.
 
 Airreload downloads an immutable, commit-verified SDK release on first use and
-reuses it from the installation's `sdks/` directory. The CLI keeps its own Dart
-runtime; selecting an older Flutter never replaces it. Your project's FVM
+reuses it from the installation's `sdks/` directory. The compiled CLI runs independently
+of the selected Flutter SDK. Your project's FVM
 configuration and source files are unchanged. These are preview releases for
 manual phone acceptance testing.
 

@@ -26,8 +26,14 @@ class Operations {
   Future<Map<String, dynamic>> session() => workspace.activeSession();
   Future<void> host(int port) => runHost(workspace, port);
   Future<int> attach(String project, List<String> arguments) async {
+    final manager = FlutterSdkManager(workspace.root, logger);
+    final release = await manager.select(project);
+    final sdk = Workspace(
+      workspace.root,
+      sdkRoot: await manager.install(release),
+    );
     final child = await startProcess(
-      workspace.flutter,
+      sdk.flutter,
       arguments,
       workingDirectory: project,
       mode: ProcessStartMode.inheritStdio,
@@ -60,8 +66,13 @@ class Operations {
       }
     }
     final sdkExists = await File(workspace.flutter).exists();
-    report(sdkExists, 'Flutter SDK: ${workspace.flutter}');
-    if (sdkExists) {
+    if (!sdkExists) {
+      logger.info(
+        'Flutter SDKs are downloaded on first use and reused across projects. '
+        'Cache: ${p.join(workspace.root, 'sdks')}',
+      );
+    } else {
+      report(true, 'Flutter SDK: ${workspace.flutter}');
       final head = await runProcess('git', [
         '-C',
         workspace.sdkRoot,
@@ -186,7 +197,7 @@ class AirreloadRunner extends CommandRunner<int> {
     addCommand(
       ActionCommand(
         'doctor',
-        'Check the patched Flutter SDK and required local tools.',
+        'Check local tools and report on-demand Flutter SDK setup.',
         (args) => operations.doctor(),
       ),
     );

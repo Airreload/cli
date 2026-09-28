@@ -8,7 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 const revision = '1234567890123456789012345678901234567890';
-String manifest([String version = '0.3.0-beta.2']) =>
+String manifest([String version = '0.3.0-beta.3']) =>
     '''
 CLI_REPOSITORY=https://github.com/Airreload/cli.git
 CLI_TAG=v$version
@@ -98,7 +98,7 @@ void main() {
         UpdateRelease(
           revision,
           manifest('0.3.0-beta.10'),
-        ).newerThan('0.3.0-beta.2'),
+        ).newerThan('0.3.0-beta.3'),
         isTrue,
       );
       expect(
@@ -107,9 +107,31 @@ void main() {
       );
       expect(UpdateRelease(revision, manifest()).newerThan('0.3.0'), isFalse);
       expect(
-        UpdateRelease(revision, manifest()).newerThan('0.3.0-beta.2'),
+        UpdateRelease(revision, manifest()).newerThan('0.3.0-beta.3'),
         isFalse,
       );
+    },
+  );
+
+  test(
+    'native manifests require hashes without requiring a Flutter runtime',
+    () {
+      final native =
+          '${manifest().split('FLUTTER_REPOSITORY').first}'
+          'CLI_DISTRIBUTION=native\n'
+          'CLI_SHA256_MACOS_ARM64=${'a' * 64}\n'
+          'CLI_SHA256_WINDOWS_X64=${'b' * 64}\n';
+      expect(UpdateRelease(revision, native).tag, 'v0.3.0-beta.3');
+      for (final invalid in [
+        native.replaceFirst('a' * 64, 'invalid'),
+        native.replaceFirst('b' * 64, ''),
+        native.replaceFirst(
+          'CLI_DISTRIBUTION=native',
+          'CLI_DISTRIBUTION=unknown',
+        ),
+      ]) {
+        expect(() => UpdateRelease(revision, invalid), throwsFormatException);
+      }
     },
   );
 
@@ -118,7 +140,7 @@ void main() {
       manifest().replaceFirst('Airreload/cli.git', 'someone/cli.git'),
       '${manifest()}CLI_TAG=v1.0.0\n',
       manifest().replaceFirst('CLI_COMMIT=$revision', 'CLI_COMMIT=bad'),
-      manifest().replaceFirst('v0.3.0-beta.2', '../../bad'),
+      manifest().replaceFirst('v0.3.0-beta.3', '../../bad'),
     ]) {
       expect(() => UpdateRelease(revision, invalid), throwsFormatException);
     }
@@ -138,9 +160,9 @@ void main() {
       expect(await manager().update(checkOnly: true), 0);
       final output = logger.messages.join('\n');
       expect(output, contains('Installed: Airreload $cliVersion'));
-      expect(output, contains('Available: Airreload 0.3.0-beta.2'));
+      expect(output, contains('Available: Airreload 0.3.0-beta.3'));
       expect(output, contains('A newer CLI release'));
-      expect(output, contains('/compare/v$cliVersion...v0.3.0-beta.2'));
+      expect(output, contains('/compare/v$cliVersion...v0.3.0-beta.3'));
       expect(output, contains(updateSource));
       expect(output, contains(root.path));
       expect(installs, 0);

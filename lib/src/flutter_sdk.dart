@@ -75,6 +75,27 @@ Future<String?> fvmVersion(String project) async {
   }
 }
 
+void validateFlutterCachePath(String sdk, {bool? windows}) {
+  if (!(windows ?? Platform.isWindows)) return;
+  final cache = p.windows.join(
+    sdk,
+    'bin',
+    'cache',
+    'downloads',
+    'storage.googleapis.com',
+    'flutter_infra_release',
+    'flutter',
+    '0' * 40,
+    '*',
+  );
+  if (cache.length >= 260) {
+    throw StateError(
+      'Flutter download cache path is too long for Windows. '
+      'Reinstall Airreload with a shorter AIRRELOAD_INSTALL_ROOT and retry.',
+    );
+  }
+}
+
 typedef SdkCommand = Future<ProcessResult> Function(
   String executable,
   List<String> arguments, {
@@ -354,8 +375,11 @@ class FlutterSdkManager {
       final staging = await Directory(cache).createTemp('.install-$name-');
       final sdk = p.join(staging.path, 'flutter');
       try {
+        validateFlutterCachePath(sdk);
+        validateFlutterCachePath(destination);
         await _checked('git', [
           'clone',
+          if (Platform.isWindows) ...['--config', 'core.longpaths=true'],
           '--quiet',
           '--depth',
           '4',

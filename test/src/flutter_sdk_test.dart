@@ -19,6 +19,15 @@ void main() {
   });
   tearDown(() => temp.delete(recursive: true));
 
+  test('Windows cache path guard runs before Flutter bootstrap', () {
+    validateFlutterCachePath(r'C:\ar\sdks\flutter', windows: true);
+    expect(
+      () => validateFlutterCachePath('C:\\${'x' * 200}', windows: true),
+      throwsStateError,
+    );
+    validateFlutterCachePath('/${'x' * 300}', windows: false);
+  });
+
   test('version metadata accepts first-run download output before JSON', () {
     expect(
       flutterVersionMetadata(
