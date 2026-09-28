@@ -30,12 +30,21 @@ class UpdateRelease {
       }
       values[line.substring(0, split)] = line.substring(split + 1);
     }
+    final native = values['CLI_DISTRIBUTION'] == 'native';
+    final validDistribution = native
+        ? ['CLI_SHA256_MACOS_ARM64', 'CLI_SHA256_WINDOWS_X64'].every(
+            (key) => RegExp(r'^[0-9a-f]{64}$').hasMatch(values[key] ?? ''),
+          )
+        : (values['CLI_DISTRIBUTION'] == null &&
+              values['FLUTTER_REPOSITORY'] ==
+                  'https://github.com/Airreload/flutter.git' &&
+              RegExp(r'^[0-9a-f]{40}$')
+                  .hasMatch(values['FLUTTER_COMMIT'] ?? '') &&
+              RegExp(r'^[A-Za-z0-9._-]+$')
+                  .hasMatch(values['FLUTTER_TAG'] ?? ''));
     if (values['CLI_REPOSITORY'] != 'https://github.com/Airreload/cli.git' ||
-        values['FLUTTER_REPOSITORY'] !=
-            'https://github.com/Airreload/flutter.git' ||
         !RegExp(r'^[0-9a-f]{40}$').hasMatch(values['CLI_COMMIT'] ?? '') ||
-        !RegExp(r'^[0-9a-f]{40}$').hasMatch(values['FLUTTER_COMMIT'] ?? '') ||
-        !RegExp(r'^[A-Za-z0-9._-]+$').hasMatch(values['FLUTTER_TAG'] ?? '')) {
+        !validDistribution) {
       throw const FormatException('Invalid official release manifest.');
     }
     tag = values['CLI_TAG'] ?? '';
@@ -120,7 +129,7 @@ class UpdateManager {
       logger.info('Source: $updateSource');
       logger.info('Installation: ${workspace.root}');
       logger.info(
-        'Scope: Airreload CLI and its bundled Flutter/Dart runtime. '
+        'Scope: Airreload CLI. Flutter SDKs are installed on demand. '
         'Project SDK downloads and pairing credentials are preserved; Airreload Go is updated separately.',
       );
       if (!release.newerThan(currentVersion)) {

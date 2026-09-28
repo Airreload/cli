@@ -3,6 +3,7 @@ name: CLI CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -17,12 +18,15 @@ jobs:
         include:
           - name: Linux
             os: ubuntu-latest
+            target: linux-x64
             extension: ""
           - name: macOS
-            os: macos-latest
+            os: macos-15
+            target: macos-arm64
             extension: ""
           - name: Windows
             os: windows-latest
+            target: windows-x64
             extension: .exe
     runs-on: ${{ matrix.os }}
     steps:
@@ -41,7 +45,33 @@ jobs:
         shell: bash
         run: mkdir -p build
       - name: Compile native executable
-        run: dart compile exe bin/airreload.dart -o build/airreload${{ matrix.extension }}
+        run: dart compile exe bin/airreload.dart -o build/airreload-${{ matrix.target }}${{ matrix.extension }}
       - name: Smoke-test native executable
-        shell: bash
-        run: ./build/airreload${{ matrix.extension }} --version
+        run: dart run tool/smoke_native.dart build/airreload-${{ matrix.target }}${{ matrix.extension }}
+      - name: Package release checksum
+        run: dart run tool/package_release.dart build/airreload-${{ matrix.target }}${{ matrix.extension }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: airreload-${{ matrix.target }}
+          path: |
+            build/airreload-${{ matrix.target }}${{ matrix.extension }}
+            build/airreload-${{ matrix.target }}${{ matrix.extension }}.sha256
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Create verified draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" release/* --verify-tag --draft --title "Airreload CLI $RELEASE_TAG" --notes "Native CLI binaries; Flutter SDKs are downloaded on demand."
