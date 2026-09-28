@@ -7,6 +7,7 @@ import 'package:mason_logger/mason_logger.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+const installedVersion = '0.3.0-beta.2';
 const revision = '1234567890123456789012345678901234567890';
 String manifest([String version = '0.3.0-beta.3']) =>
     '''
@@ -58,6 +59,7 @@ void main() {
   UpdateManager manager({UpdateFetch? fetch, bool supported = true}) =>
       UpdateManager(
         workspace,
+        currentVersion: installedVersion,
         logger: logger,
         supported: supported,
         now: () => now,
@@ -159,10 +161,10 @@ void main() {
     () async {
       expect(await manager().update(checkOnly: true), 0);
       final output = logger.messages.join('\n');
-      expect(output, contains('Installed: Airreload $cliVersion'));
+      expect(output, contains('Installed: Airreload $installedVersion'));
       expect(output, contains('Available: Airreload 0.3.0-beta.3'));
       expect(output, contains('A newer CLI release'));
-      expect(output, contains('/compare/v$cliVersion...v0.3.0-beta.3'));
+      expect(output, contains('/compare/v$installedVersion...v0.3.0-beta.3'));
       expect(output, contains(updateSource));
       expect(output, contains(root.path));
       expect(installs, 0);
@@ -191,6 +193,7 @@ void main() {
     () async {
       final updater = UpdateManager(
         workspace,
+        currentVersion: installedVersion,
         logger: logger,
         supported: true,
         fetch: (uri) async {
@@ -217,7 +220,7 @@ printf 'updated' >"$AIRRELOAD_INSTALL_ROOT/subprocess-result"
   );
 
   test('equal and newer local versions never install', () async {
-    for (final version in [cliVersion, '0.2.0']) {
+    for (final version in [installedVersion, '0.2.0']) {
       remoteManifest = manifest(version);
       expect(await manager().update(), 0);
     }
@@ -297,7 +300,7 @@ printf 'updated' >"$AIRRELOAD_INSTALL_ROOT/subprocess-result"
     await Directory(workspace.state).create(recursive: true);
     await File(p.join(workspace.state, 'update-check.json'))
         .writeAsString('broken');
-    remoteManifest = manifest(cliVersion);
+    remoteManifest = manifest(installedVersion);
     await manager().notifyIfAvailable();
     expect(requests, hasLength(2));
     expect(logger.messages, isEmpty);

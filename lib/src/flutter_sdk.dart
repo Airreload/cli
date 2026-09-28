@@ -338,6 +338,9 @@ class FlutterSdkManager {
           ),
         ).exists()) {
       await _verify(bundled, release);
+      logger.info(
+        'Using existing Airreload Flutter ${release.version}: $bundled',
+      );
       return bundled;
     }
     await Directory(cache).create(recursive: true);
@@ -361,6 +364,9 @@ class FlutterSdkManager {
                 Platform.isWindows ? 'dart.exe' : 'dart',
               ),
             ).exists()) {
+          logger.info(
+            'Using cached Airreload Flutter ${release.version}: $destination',
+          );
           return destination;
         }
         throw StateError(
@@ -375,6 +381,9 @@ class FlutterSdkManager {
       final staging = await Directory(cache).createTemp('.install-$name-');
       final sdk = p.join(staging.path, 'flutter');
       try {
+        logger.info(
+          'Installing Airreload Flutter ${release.version}: $destination',
+        );
         validateFlutterCachePath(sdk);
         validateFlutterCachePath(destination);
         await _checked('git', [
