@@ -40,6 +40,25 @@ void main() {
         ),
         p.join(temporary.path, 'installation'),
       );
+      final pathInvocation = File(
+        p.join(temporary.path, 'projects', 'example', 'test_app', 'airreload'),
+      ).absolute.uri;
+      expect(
+        workspaceRootFromScript(
+          pathInvocation,
+          resolvedExecutable: installedBinary.absolute.path,
+          environment: const {},
+        ),
+        p.join(temporary.path, 'installation'),
+      );
+      expect(
+        workspaceRootFromScript(
+          pathInvocation,
+          resolvedExecutable: installedBinary.absolute.path,
+          environment: {'AIRRELOAD_WORKSPACE': cli.path},
+        ),
+        cli.path,
+      );
       expect(
         workspaceRootFromScript(
           binScript.absolute.uri,

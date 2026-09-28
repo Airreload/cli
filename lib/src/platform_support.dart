@@ -6,11 +6,23 @@ import 'package:path/path.dart' as p;
 bool get isSupportedHost =>
     Platform.isMacOS || Platform.isLinux || Platform.isWindows;
 
-String workspaceRootFromScript(Uri script, {Map<String, String>? environment}) {
+String workspaceRootFromScript(
+  Uri script, {
+  Map<String, String>? environment,
+  String? resolvedExecutable,
+}) {
   final configured =
       (environment ?? Platform.environment)['AIRRELOAD_WORKSPACE'];
   if (configured != null && configured.isNotEmpty) {
     return p.normalize(p.absolute(configured));
+  }
+  // In native builds, Platform.script can resolve argv[0] against the current
+  // project when launched through PATH. Use the actual executable location.
+  final executable = File(resolvedExecutable ?? Platform.resolvedExecutable);
+  final executableRoot = executable.parent.parent;
+  if (p.basename(executable.parent.path).toLowerCase() == 'bin' &&
+      File(p.join(executableRoot.path, '.airreload-installer')).existsSync()) {
+    return executableRoot.path;
   }
   final scriptFile = File.fromUri(script).absolute;
   final installedRoot = scriptFile.parent.parent;
