@@ -75,4 +75,3 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: gh release create "$RELEASE_TAG" release/* --verify-tag --draft --title "Airreload CLI $RELEASE_TAG" --notes "Native CLI binaries; Flutter SDKs are downloaded on demand."
-
