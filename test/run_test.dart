@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -10,6 +11,105 @@ import 'package:test/test.dart';
 import 'package:yaml/yaml.dart';
 
 void main() {
+  test(
+    'connection waits can finish late or use an explicit deadline',
+    () async {
+      final pending = Completer<String>();
+      final unlimited = RunOptions(project: '.');
+      expect(unlimited.waitSeconds, 0);
+      final waiting = unlimited.waitForConnection(pending.future, 'expired');
+      final limited = RunOptions(project: '.', waitSeconds: 1);
+      await expectLater(
+        limited.waitForConnection(Completer<String>().future, 'expired'),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            'expired',
+          ),
+        ),
+      );
+      pending.complete('connected');
+      expect(await waiting, 'connected');
+      expect(
+        await limited.waitForConnection(Future.value('ready'), 'expired'),
+        'ready',
+      );
+    },
+  );
+
+  test('pairing retries recover a lost response without claiming another phone', () async {
+    final server = await PairingServer.start();
+    final client = HttpClient();
+    addTearDown(() async {
+      client.close(force: true);
+      await server.close();
+    });
+    Future<(int, dynamic)> report(String id, List<String> abis) async {
+      final request = await client.postUrl(server.url('127.0.0.1'));
+      request.headers.contentType = ContentType.json;
+      request.write(jsonEncode({'requestId': id, 'abis': abis}));
+      final response = await request.close();
+      return (
+        response.statusCode,
+        jsonDecode(await utf8.decoder.bind(response).join()),
+      );
+    }
+
+    const id = 'phone-request-123456';
+    final first = await report(id, ['arm64-v8a']);
+    expect(first.$1, HttpStatus.ok);
+    expect(await server.waitForPhone(), ['arm64-v8a']);
+    // The phone did not receive/use the first response and resends its report.
+    final retry = await report(id, ['arm64-v8a']);
+    expect(retry.$1, HttpStatus.ok);
+    expect(retry.$2, containsPair('state', 'building'));
+    expect(
+      (await report('other-request-12345', ['arm64-v8a'])).$1,
+      HttpStatus.conflict,
+    );
+    expect((await report(id, ['x86_64'])).$1, HttpStatus.conflict);
+    server.publishDownload(Uri.parse('http://127.0.0.1/app.apk'));
+    final ready = await report(id, ['arm64-v8a']);
+    expect(ready.$2, containsPair('state', 'ready'));
+    server.fail('Build failed');
+    expect(
+      (await report(id, ['arm64-v8a'])).$2,
+      containsPair('state', 'error'),
+    );
+  });
+
+  test(
+    'concurrent pairing reports cannot overwrite the accepted phone',
+    () async {
+      final server = await PairingServer.start();
+      final client = HttpClient();
+      addTearDown(() async {
+        client.close(force: true);
+        await server.close();
+      });
+      final requests = await Future.wait([
+        client.postUrl(server.url('127.0.0.1')),
+        client.postUrl(server.url('127.0.0.1')),
+      ]);
+      final statuses = await Future.wait(
+        requests.indexed.map((entry) async {
+          entry.$2.write(
+            jsonEncode({
+              'requestId': 'phone-request-0000${entry.$1}',
+              'abis': ['arm64-v8a'],
+            }),
+          );
+          final response = await entry.$2.close();
+          await response.drain<void>();
+          return response.statusCode;
+        }),
+      );
+      expect(statuses, unorderedEquals([HttpStatus.ok, HttpStatus.conflict]));
+      expect(await server.waitForPhone(), ['arm64-v8a']);
+    },
+  );
+
   test('successful Flutter exit means finish only while the same app connection remains', () {
     expect(
       shouldFinishAttach(0, stillConnected: true, sameConnection: true),
@@ -409,7 +509,7 @@ void main() {
       expect(initial.statusCode, HttpStatus.ok);
       expect(
         jsonDecode(await utf8.decoder.bind(initial).join()),
-        containsPair('state', 'building'),
+        containsPair('state', 'waiting'),
       );
 
       final report = await client.postUrl(url);

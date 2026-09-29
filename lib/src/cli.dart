@@ -115,9 +115,9 @@ class AirreloadRunner extends CommandRunner<int> {
       'Show a one-time Airreload Go pairing QR, build the best matching debug APK for that phone, and attach for hot reload, hot restart, and DevTools.\nUse r to hot reload and R to hot restart Dart changes under lib/. Re-run after changing assets, dependencies, or native code. External Gradle file references are not rewritten.',
       (args) {
         final wait = int.tryParse(args['wait-timeout'] as String);
-        if (wait == null || wait < 1) {
+        if (wait == null || wait < 0) {
           throw UsageException(
-            '--wait-timeout must be a positive number of seconds.',
+            '--wait-timeout must be zero (no timeout) or a positive number of seconds.',
             usage,
           );
         }
@@ -173,8 +173,8 @@ class AirreloadRunner extends CommandRunner<int> {
       )
       ..addOption(
         'wait-timeout',
-        defaultsTo: '600',
-        help: 'Connection and reconnection timeout in seconds.',
+        defaultsTo: '0',
+        help: 'Pairing, connection, and reconnection timeout in seconds; 0 waits until Ctrl-C.',
       );
     addCommand(run);
     final update = ActionCommand(

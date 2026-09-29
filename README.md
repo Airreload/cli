@@ -3,7 +3,7 @@
 Airreload builds a Flutter Android debug APK, serves it over the local network,
 and attaches the Flutter tool for hot reload after the app opens.
 
-> **Beta:** The current version is `0.3.0-beta.3`.
+> **Beta:** The current version is `0.3.0-beta.4`.
 
 ## Requirements
 
@@ -33,6 +33,15 @@ and `.\bin\airreload.exe doctor`. Keep the executable in `cli/bin` for source
 checkouts. The public installer places the native executable in
 `~/.airreload/bin` (or `%USERPROFILE%\.airreload\bin`) and needs no Dart or Flutter
 installation. See the [installer](https://github.com/Airreload/installer).
+
+## Waiting and reconnecting
+
+`airreload run` keeps its pairing code, download server, and app connection
+available until you stop the session with Ctrl-C. Waiting to scan, a slow first
+build, or taking time to install the APK does not expire the session by default.
+To limit each pairing/connection wait, pass `--wait-timeout 600` (seconds).
+The default, `--wait-timeout 0`, disables that deadline. Keep the computer awake
+and the terminal running; after stopping or restarting, use the new QR code.
 
 ## Updates
 
