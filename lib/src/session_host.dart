@@ -258,6 +258,7 @@ class PairingServer {
   late final StreamSubscription<HttpRequest> _subscription;
   final _phone = Completer<List<String>>();
   List<String>? _abis;
+  String? _requestId;
   Uri? _download;
   String? _failure;
   bool _closed = false;
@@ -326,13 +327,6 @@ class PairingServer {
         return;
       }
       if (request.method == 'POST') {
-        if (_abis != null) {
-          await _json(request, HttpStatus.conflict, {
-            'state': 'error',
-            'message': 'This pairing code has already been used.',
-          });
-          return;
-        }
         if (request.contentLength > 16 * 1024) throw const FormatException();
         final bytes = <int>[];
         await for (final chunk in request) {
@@ -349,6 +343,29 @@ class PairingServer {
             if (abi is String && abi.isNotEmpty && abi.length <= 64) abi,
         }.toList(growable: false);
         if (abis.isEmpty) throw const FormatException();
+        final requestId = decoded['requestId'];
+        if (requestId != null &&
+            (requestId is! String ||
+                !RegExp(r'^[A-Za-z0-9_-]{16,64}$').hasMatch(requestId))) {
+          throw const FormatException();
+        }
+        // Check after reading the body: two concurrent requests must not both
+        // complete the one-phone handshake. A retry may only replay its report.
+        if (_abis case final accepted?) {
+          if (requestId != null &&
+              requestId == _requestId &&
+              abis.length == accepted.length &&
+              abis.every(accepted.contains)) {
+            await _state(request);
+          } else {
+            await _json(request, HttpStatus.conflict, {
+              'state': 'error',
+              'message': 'This pairing code has already been used. Restart Airreload on your computer and scan the new QR code.',
+            });
+          }
+          return;
+        }
+        _requestId = requestId as String?;
         _abis = abis;
         _phone.complete(abis);
         await _state(request);
@@ -382,10 +399,15 @@ class PairingServer {
         'message': 'Your debug APK is ready. Airreload Go will download it automatically.',
         'downloadUrl': url.toString(),
       });
-    } else {
+    } else if (_abis != null) {
       await _json(request, HttpStatus.ok, {
         'state': 'building',
         'message': 'Airreload is selecting an Android target and building your debug APK.',
+      });
+    } else {
+      await _json(request, HttpStatus.ok, {
+        'state': 'waiting',
+        'message': 'Waiting for your phone to confirm pairing.',
       });
     }
   }

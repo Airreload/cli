@@ -122,7 +122,7 @@ class RunOptions {
     this.flavor,
     this.defines = const [],
     this.defineFiles = const [],
-    this.waitSeconds = 600,
+    this.waitSeconds = 0,
     this.flutterVersion,
   });
   final String project;
@@ -133,6 +133,14 @@ class RunOptions {
   final List<String> defineFiles;
   final int waitSeconds;
   final String? flutterVersion;
+
+  Future<T> waitForConnection<T>(Future<T> connection, String timeoutMessage) {
+    if (waitSeconds == 0) return connection;
+    return connection.timeout(
+      Duration(seconds: waitSeconds),
+      onTimeout: () => throw StateError(timeoutMessage),
+    );
+  }
 
   List<String> get dartArguments => [
     for (final value in defines) '--dart-define=$value',
@@ -323,11 +331,9 @@ class RunWorkflow {
       final abis = await _waitWithProgress(
         'Waiting for Airreload Go to pair',
         'Phone paired',
-        () => pairing!.waitForPhone().timeout(
-          Duration(seconds: options.waitSeconds),
-          onTimeout: () => throw StateError(
-            'No phone paired. Scan the QR with Airreload Go, confirm pairing, and check that both devices are on the same trusted network.',
-          ),
+        () => options.waitForConnection(
+          pairing!.waitForPhone(),
+          'The pairing wait timed out. Run Airreload again and scan the new QR code. Use --wait-timeout 0 to wait until you stop the session.',
         ),
       );
       final targetPlatform = flutterAndroidTargetForAbis(abis);
@@ -385,11 +391,9 @@ class RunWorkflow {
         final uri = await _waitWithProgress(
           'Waiting for your app to connect',
           'App connected',
-          () => host!.waitForReadyApp().timeout(
-            Duration(seconds: options.waitSeconds),
-            onTimeout: () => throw StateError(
-              'The app\'s VM service did not become reachable. Check that the phone can reach $address, then install and open this session\'s APK. If the wrong network interface was selected, rerun with --host.',
-            ),
+          () => options.waitForConnection(
+            host!.waitForReadyApp(),
+            'The app connection wait timed out. Run Airreload again, then install and open the new session\'s APK. Check that the phone can reach $address. Use --wait-timeout 0 to wait until you stop the session.',
           ),
         );
         logger.info(

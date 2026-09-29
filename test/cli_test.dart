@@ -133,6 +133,23 @@ void main() {
     },
   );
 
+  test(
+    'run waits until stopped by default and accepts an explicit timeout',
+    () async {
+      expect(await run(['run']), 0);
+      expect(operations.runOptions!.waitSeconds, 0);
+      expect(await run(['run', '--wait-timeout', '0']), 0);
+      expect(operations.runOptions!.waitSeconds, 0);
+      expect(await run(['run', '--wait-timeout', '30']), 0);
+      expect(operations.runOptions!.waitSeconds, 30);
+      for (final value in ['-1', 'invalid']) {
+        operations.calls.clear();
+        expect(await run(['run', '--wait-timeout', value]), 64);
+        expect(operations.calls, isEmpty);
+      }
+    },
+  );
+
   test('run help mentions hot reload, hot restart, and DevTools', () async {
     expect(await run(['help', 'run']), 0);
     expect(output.text.toString(), contains('hot reload'));
