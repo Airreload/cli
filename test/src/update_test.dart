@@ -157,16 +157,16 @@ void main() {
   });
 
   test(
-    'check displays why, changes, source and destination without mutations',
+    'check displays release changes and next step without mutations',
     () async {
       expect(await manager().update(checkOnly: true), 0);
       final output = logger.messages.join('\n');
-      expect(output, contains('Installed: Airreload $installedVersion'));
-      expect(output, contains('Available: Airreload 0.3.0-beta.3'));
       expect(output, contains('A newer CLI release'));
       expect(output, contains('/compare/v$installedVersion...v0.3.0-beta.3'));
-      expect(output, contains(updateSource));
-      expect(output, contains(root.path));
+      expect(
+        output,
+        contains('Run airreload update to install this release here.'),
+      );
       expect(installs, 0);
       expect(requests, hasLength(2));
       expect(await Directory(workspace.state).exists(), isFalse);

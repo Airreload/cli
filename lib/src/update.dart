@@ -8,8 +8,6 @@ import 'package:pub_semver/pub_semver.dart';
 
 import 'workspace.dart';
 
-const updateSource =
-    'https://github.com/Airreload/installer/blob/main/versions.env';
 const _rawSource = 'https://raw.githubusercontent.com/Airreload/installer';
 const _marker = 'airreload-installer-v1';
 
@@ -124,14 +122,6 @@ class UpdateManager {
   Future<int> update({bool checkOnly = false}) async {
     try {
       final release = await latest();
-      logger.info('Installed: Airreload $currentVersion');
-      logger.info('Available: Airreload ${release.version}');
-      logger.info('Source: $updateSource');
-      logger.info('Installation: ${workspace.root}');
-      logger.info(
-        'Scope: Airreload CLI. Flutter SDKs are installed on demand. '
-        'Project SDK downloads and pairing credentials are preserved; Airreload Go is updated separately.',
-      );
       if (!release.newerThan(currentVersion)) {
         logger.success(
           'Airreload is up to date (no newer published installer release).',
