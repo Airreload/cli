@@ -71,12 +71,12 @@ class UpdateManager {
     UpdateInstall? install,
     this.currentVersion = cliVersion,
     bool? supported,
+    bool? windows,
     DateTime Function()? now,
   }) : logger = logger ?? Logger(),
        _install = install ?? _runInstaller,
-       supported =
-           supported ??
-           (Platform.isMacOS && Platform.version.contains('arm64')),
+       windows = windows ?? Platform.isWindows,
+       supported = supported ?? supportsAutomaticUpdates(),
        _now = now ?? DateTime.now;
 
   final Workspace workspace;
@@ -85,6 +85,7 @@ class UpdateManager {
   final UpdateInstall _install;
   final String currentVersion;
   final bool supported;
+  final bool windows;
   final DateTime Function() _now;
   File get _cache => File(p.join(workspace.state, 'update-check.json'));
 
@@ -133,7 +134,7 @@ class UpdateManager {
       );
       if (!await isManaged() || !supported) {
         logger.info(
-          'Automatic updates require an installer-owned macOS Apple Silicon installation. '
+          'Automatic updates require an installer-owned macOS Apple Silicon or Windows x64 installation. '
           'For source installations, check out ${release.tag} in the CLI repository, '
           'run dart pub get, and rebuild the executable if you use one.',
         );
@@ -147,14 +148,16 @@ class UpdateManager {
       final temporary = await Directory.systemTemp.createTemp(
         'airreload-update-',
       );
+      var handedOff = false;
       try {
-        final script = File(p.join(temporary.path, 'install.sh'));
+        final scriptName = windows ? 'install.ps1' : 'install.sh';
+        final script = File(p.join(temporary.path, scriptName));
         await script.writeAsString(
           await (fetch?.call(
-                Uri.parse('$_rawSource/${release.revision}/install.sh'),
+                Uri.parse('$_rawSource/${release.revision}/$scriptName'),
               ) ??
               _download(
-                Uri.parse('$_rawSource/${release.revision}/install.sh'),
+                Uri.parse('$_rawSource/${release.revision}/$scriptName'),
               )),
         );
         await File(p.join(temporary.path, 'versions.env'))
@@ -169,6 +172,15 @@ class UpdateManager {
           );
           return code;
         }
+        if (windows) {
+          handedOff = true;
+          logger.info(
+            'The updater has opened in a separate PowerShell window. '
+            'This command will exit so Windows can replace airreload.exe. '
+            'Wait for that window to confirm success, then run airreload version.',
+          );
+          return 0;
+        }
         if (await _cache.exists()) await _cache.delete();
         logger.success('Updated Airreload to ${release.version}.');
         logger.info(
@@ -176,7 +188,7 @@ class UpdateManager {
         );
         return 0;
       } finally {
-        await temporary.delete(recursive: true);
+        if (!handedOff) await temporary.delete(recursive: true);
       }
     } on Object catch (error) {
       logger.err(
@@ -257,8 +269,7 @@ class UpdateManager {
           'Cannot verify saved session in ${file.path}. Stop Airreload sessions before updating.',
         );
       }
-      final result = await Process.run('kill', ['-0', '$processId']);
-      if (result.exitCode == 0) {
+      if (await _processIsRunning(processId)) {
         throw StateError(
           'Stop the running Airreload session (PID $processId) before updating.',
         );
@@ -291,6 +302,21 @@ Future<String> _download(
 }
 
 Future<int> _runInstaller(String script, String root) async {
+  if (Platform.isWindows) {
+    final encoded = encodePowerShell(windowsUpdateScript(script, root, pid));
+    final result = await Process.run(_windowsPowerShell, [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      "\$ErrorActionPreference = 'Stop'; "
+          'Start-Process -FilePath ${_psQuote(_windowsPowerShell)} '
+          '-WorkingDirectory ${_psQuote(Directory.systemTemp.path)} '
+          "-ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', "
+          "'-EncodedCommand', '$encoded') -WindowStyle Normal",
+    ], workingDirectory: Directory.systemTemp.path);
+    if (result.exitCode != 0) stderr.write(result.stderr);
+    return result.exitCode;
+  }
   final process = await Process.start(
     'bash',
     [script, '--replace', '--no-path', '--preserve-data'],
@@ -303,3 +329,72 @@ Future<int> _runInstaller(String script, String root) async {
   );
   return process.exitCode;
 }
+
+bool supportsAutomaticUpdates() =>
+    (Platform.isMacOS && Platform.version.contains('arm64')) ||
+    (Platform.isWindows &&
+        Platform.version.contains('x64') &&
+        Platform.environment['PROCESSOR_ARCHITECTURE'] != 'ARM64' &&
+        Platform.environment['PROCESSOR_ARCHITEW6432'] != 'ARM64');
+
+String get _windowsPowerShell => p.join(
+  Platform.environment['SystemRoot'] ?? r'C:\Windows',
+  'System32',
+  'WindowsPowerShell',
+  'v1.0',
+  'powershell.exe',
+);
+
+Future<bool> _processIsRunning(int processId) async {
+  final result = Platform.isWindows
+      ? await Process.run(_windowsPowerShell, [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          '\$process = Get-Process -Id $processId -ErrorAction SilentlyContinue; '
+              'if (\$null -ne \$process) { exit 0 }; exit 1',
+        ])
+      : await Process.run('kill', ['-0', '$processId']);
+  if (result.exitCode != 0 && result.exitCode != 1) {
+    throw StateError('Could not check saved Airreload process $processId.');
+  }
+  return result.exitCode == 0;
+}
+
+String _psQuote(String value) => "'${value.replaceAll("'", "''")}'";
+
+String encodePowerShell(String script) => base64Encode([
+  for (final unit in script.codeUnits) ...[unit & 0xff, unit >> 8],
+]);
+
+// Windows locks the running native executable. The helper owns its temporary
+// files after handoff and waits for the CLI to exit before replacing it.
+String windowsUpdateScript(
+  String script,
+  String root,
+  int parentPid, {
+  bool pauseOnExit = true,
+}) =>
+    '''
+\$ErrorActionPreference = 'Stop'
+\$failed = \$false
+try {
+  Write-Host 'Waiting for Airreload to exit...'
+  \$owner = Get-Process -Id $parentPid -ErrorAction SilentlyContinue
+  if (\$null -ne \$owner -and -not \$owner.WaitForExit(120000)) {
+    throw 'Airreload did not exit. Close it and retry the update.'
+  }
+  \$env:AIRRELOAD_INSTALL_ROOT = ${_psQuote(root)}
+  \$env:AIRRELOAD_NO_UPDATE_CHECK = '1'
+  & ${_psQuote(script)} -Replace -NoPath -PreserveData
+  \$cache = Join-Path \$env:AIRRELOAD_INSTALL_ROOT 'cli\\.airreload\\update-check.json'
+  if (Test-Path -LiteralPath \$cache) { Remove-Item -LiteralPath \$cache -Force }
+  Write-Host 'Airreload update completed. Run airreload version in your terminal.'
+} catch {
+  \$failed = \$true
+  Write-Host ("Airreload update failed: " + \$_.Exception.Message) -ForegroundColor Red
+} finally {
+  Remove-Item -LiteralPath ${_psQuote(p.dirname(script))} -Recurse -Force -ErrorAction SilentlyContinue
+${pauseOnExit ? "  Read-Host 'Press Enter to close' | Out-Null\n" : ''}}
+if (\$failed) { exit 1 }
+''';

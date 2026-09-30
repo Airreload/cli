@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -62,6 +63,7 @@ void main() {
         currentVersion: installedVersion,
         logger: logger,
         supported: supported,
+        windows: false,
         now: () => now,
         fetch:
             fetch ??
@@ -219,6 +221,196 @@ printf 'updated' >"$AIRRELOAD_INSTALL_ROOT/subprocess-result"
     skip: Platform.isWindows,
   );
 
+  test(
+    'Windows stages its pinned installer and reports handoff, not completion',
+    () async {
+      final updater = UpdateManager(
+        workspace,
+        currentVersion: installedVersion,
+        logger: logger,
+        supported: true,
+        windows: true,
+        fetch: (uri) async {
+          requests.add(uri);
+          if (uri.host == 'api.github.com') {
+            return jsonEncode({'sha': revision});
+          }
+          expect(uri.pathSegments, contains(revision));
+          if (uri.path.endsWith('versions.env')) return manifest();
+          expect(uri.path.endsWith('install.ps1'), isTrue);
+          return '# pinned PowerShell installer';
+        },
+        install: (script, destination) async {
+          temporaryPath = p.dirname(script);
+          expect(p.basename(script), 'install.ps1');
+          expect(destination, root.path);
+          expect(
+            await File(script).readAsString(),
+            '# pinned PowerShell installer',
+          );
+          expect(
+            await File(p.join(temporaryPath!, 'versions.env')).readAsString(),
+            manifest(),
+          );
+          return installExit;
+        },
+      );
+      expect(await updater.update(checkOnly: true), 0);
+      expect(temporaryPath, isNull);
+      expect(await updater.update(), 0);
+      expect(logger.messages.join(), contains('separate PowerShell window'));
+      expect(logger.messages.join(), isNot(contains('Updated Airreload to')));
+      expect(await Directory(temporaryPath!).exists(), isTrue);
+      await Directory(temporaryPath!).delete(recursive: true);
+      installExit = 7;
+      expect(await updater.update(), 7);
+      expect(await Directory(temporaryPath!).exists(), isFalse);
+    },
+  );
+
+  test('Windows x64 is supported by the real platform check', () {
+    expect(supportsAutomaticUpdates(), isTrue);
+  }, skip: !Platform.isWindows);
+
+  test('PowerShell payload uses UTF-16 and literal quotes for paths', () {
+    final script = windowsUpdateScript(
+      p.join(root.path, "update ' folder", 'install.ps1'),
+      "C:\\Users\\O'Brien \$name ናቲ",
+      42,
+      pauseOnExit: false,
+    );
+    expect(script, contains("O''Brien"));
+    final bytes = base64Decode(encodePowerShell(script));
+    final decoded = String.fromCharCodes([
+      for (var i = 0; i < bytes.length; i += 2) bytes[i] | (bytes[i + 1] << 8),
+    ]);
+    expect(decoded, script);
+  });
+
+  test(
+    'Windows helper waits for its parent, preserves flags, and cleans up',
+    () async {
+      final powerShell = p.join(
+        Platform.environment['SystemRoot']!,
+        'System32',
+        'WindowsPowerShell',
+        'v1.0',
+        'powershell.exe',
+      );
+      final parent = await Process.start(powerShell, [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        '[Console]::ReadLine() | Out-Null',
+      ]);
+      addTearDown(() {
+        parent.kill();
+      });
+      final stage = await Directory.systemTemp.createTemp(
+        "airreload update ' ",
+      );
+      addTearDown(() async {
+        if (await stage.exists()) await stage.delete(recursive: true);
+      });
+      final installer = File(p.join(stage.path, 'install.ps1'));
+      await installer.writeAsString(
+        r'''param([switch]$Replace, [switch]$NoPath, [switch]$PreserveData)
+if (-not ($Replace -and $NoPath -and $PreserveData)) { throw 'Missing update flags' }
+if ($env:AIRRELOAD_NO_UPDATE_CHECK -ne '1') { throw 'Update recursion not disabled' }
+Set-Content -LiteralPath (Join-Path $env:AIRRELOAD_INSTALL_ROOT 'updated') -Value 'done'
+''',
+      );
+      final cache = File(p.join(workspace.state, 'update-check.json'));
+      await cache.parent.create(recursive: true);
+      await cache.writeAsString('{}');
+      final helper = await Process.start(powerShell, [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-EncodedCommand',
+        encodePowerShell(
+          windowsUpdateScript(
+            installer.path,
+            root.path,
+            parent.pid,
+            pauseOnExit: false,
+          ),
+        ),
+      ]);
+      addTearDown(() {
+        helper.kill();
+      });
+      final waiting = Completer<void>();
+      final output = <String>[];
+      final subscription = helper.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((line) {
+            output.add(line);
+            if (line.contains('Waiting for Airreload to exit')) {
+              waiting.complete();
+            }
+          });
+      final errors = helper.stderr.transform(utf8.decoder).join();
+      await waiting.future.timeout(const Duration(seconds: 30));
+      expect(await File(p.join(root.path, 'updated')).exists(), isFalse);
+      parent.stdin.writeln('exit');
+      await parent.stdin.close();
+      expect(
+        await helper.exitCode.timeout(const Duration(seconds: 30)),
+        0,
+        reason: await errors,
+      );
+      await subscription.cancel();
+      expect(
+        await File(p.join(root.path, 'updated')).readAsString(),
+        contains('done'),
+      );
+      expect(await stage.exists(), isFalse);
+      expect(await cache.exists(), isFalse);
+      expect(output.join(), contains('Airreload update completed'));
+    },
+    skip: !Platform.isWindows,
+  );
+
+  test('Windows helper reports installer errors and cleans up', () async {
+    final powerShell = p.join(
+      Platform.environment['SystemRoot']!,
+      'System32',
+      'WindowsPowerShell',
+      'v1.0',
+      'powershell.exe',
+    );
+    final stage = await Directory.systemTemp.createTemp(
+      'airreload-update-error-',
+    );
+    addTearDown(() async {
+      if (await stage.exists()) await stage.delete(recursive: true);
+    });
+    final installer = File(p.join(stage.path, 'install.ps1'));
+    await installer.writeAsString("throw 'fixture installation failure'");
+    final result = await Process.run(powerShell, [
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-EncodedCommand',
+      encodePowerShell(
+        windowsUpdateScript(
+          installer.path,
+          root.path,
+          2147483647,
+          pauseOnExit: false,
+        ),
+      ),
+    ]);
+    expect(result.exitCode, 1);
+    expect(result.stdout, contains('fixture installation failure'));
+    expect(result.stdout, isNot(contains('update completed')));
+    expect(await stage.exists(), isFalse);
+  }, skip: !Platform.isWindows);
+
   test('equal and newer local versions never install', () async {
     for (final version in [installedVersion, '0.2.0']) {
       remoteManifest = manifest(version);
@@ -260,7 +452,7 @@ printf 'updated' >"$AIRRELOAD_INSTALL_ROOT/subprocess-result"
       );
       await session.delete();
     }
-  }, skip: Platform.isWindows);
+  });
 
   test('explicit network failures fail, advisory failures remain silent and cached', () async {
     var calls = 0;
