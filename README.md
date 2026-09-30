@@ -3,7 +3,7 @@
 Airreload builds a Flutter Android debug APK, serves it over the local network,
 and attaches the Flutter tool for hot reload after the app opens.
 
-> **Beta:** The current version is `0.3.0-beta.4`.
+> **Beta:** The current version is `0.3.0-beta.5`.
 
 ## Requirements
 
@@ -66,7 +66,7 @@ Set `AIRRELOAD_NO_UPDATE_CHECK=1` to disable automatic checks. An explicit
 `airreload update --check` always contacts the release source and returns a
 nonzero exit code if it cannot check; finding an update still returns zero.
 
-Automatic installation supports the official macOS Apple Silicon installer.
+Automatic installation supports installer-owned macOS Apple Silicon and Windows x64 installations.
 It updates the native CLI at the current installation
 path (normally `~/.airreload`), leaving shell profiles unchanged. The installer
 and manifest are fetched from the same immutable installer commit; the installer
@@ -75,6 +75,24 @@ and rolls back on failure. Pairing state and downloaded project SDKs are preserv
 Stop running Airreload sessions before updating. Afterward, use `airreload run`
 to rebuild and install a fresh debug APK if the native integration has changed.
 Airreload Go on your phone is updated separately.
+
+On Windows, updating opens a separate PowerShell window. The current CLI exits
+before the installer replaces the locked executable. Wait for the update window
+to confirm success, then run `airreload version`. The helper preserves SDKs and
+pairing data, leaves PATH unchanged, and uses the same pinned installer snapshot
+and checksum checks as macOS.
+
+Windows CLI versions through `0.3.0-beta.4` only support automatic installation
+on macOS. Upgrade those Windows installations using the installer directly:
+
+```powershell
+& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/Airreload/installer/main/install.ps1').Content)) -Replace -PreserveData -NoPath
+airreload version
+```
+
+Stop running Airreload sessions first. This command replaces only an installation
+owned by the installer and preserves its downloaded SDKs and pairing data.
+
 
 Source checkouts on all platforms can use `update --check`. They receive manual
 checkout/dependency/rebuild guidance; `update` will not replace a source checkout.
