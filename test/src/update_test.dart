@@ -355,8 +355,10 @@ Set-Content -LiteralPath (Join-Path $env:AIRRELOAD_INSTALL_ROOT 'updated') -Valu
       final errors = helper.stderr.transform(utf8.decoder).join();
       await waiting.future.timeout(const Duration(seconds: 30));
       expect(await File(p.join(root.path, 'updated')).exists(), isFalse);
-      parent.stdin.writeln('exit');
-      await parent.stdin.close();
+      // End the fixture process explicitly: PowerShell's redirected console
+      // input is not a reliable way to ask that process to exit on Windows.
+      expect(parent.kill(), isTrue);
+      await parent.exitCode;
       expect(
         await helper.exitCode.timeout(const Duration(seconds: 30)),
         0,
