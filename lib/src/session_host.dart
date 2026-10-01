@@ -289,13 +289,13 @@ class PairingServer {
     if (_download != null) {
       return {
         'state': 'ready',
-        'message': 'Airreload Go will download your app automatically. Approve installation on your phone, then open your app.',
+        'message': 'Your APK is ready. Airreload Go will download it automatically. If you disconnected, tap Reconnect to computer in Go or show the reconnect QR below.',
       };
     }
     if (_abis != null) {
       return {
         'state': 'building',
-        'message': 'Your phone is connected. The download will start automatically when the build is ready.',
+        'message': 'Your phone is paired. The build continues if your phone disconnects. Return to the same Wi-Fi and reconnect when you are ready.',
       };
     }
     return {'state': 'waiting', 'message': ''};

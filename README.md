@@ -3,7 +3,7 @@
 Airreload builds a Flutter Android debug APK, serves it over the local network,
 and attaches the Flutter tool for hot reload after the app opens.
 
-> **Beta:** The current version is `0.3.0-beta.5`.
+> **Beta:** The current version is `0.3.0-beta.6`, a pairing reconnect hotfix.
 
 ## Requirements
 
@@ -42,6 +42,14 @@ build, or taking time to install the APK does not expire the session by default.
 To limit each pairing/connection wait, pass `--wait-timeout 600` (seconds).
 The default, `--wait-timeout 0`, disables that deadline. Keep the computer awake
 and the terminal running; after stopping or restarting, use the new QR code.
+
+The reconnect hotfix adds **Show reconnect QR** to the
+computer's page while building and after the APK is ready. With the corresponding
+Airreload Go update, the paired phone can tap **Reconnect to computer** or rescan
+that code after returning to the same Wi-Fi. The existing build continues, and
+a finished APK is returned without rebuilding. This requires the original CLI
+session and network address to remain available; a different phone needs a new
+session.
 
 ## Updates
 

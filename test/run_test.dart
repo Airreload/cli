@@ -64,6 +64,26 @@ void main() {
     final retry = await report(id, ['arm64-v8a']);
     expect(retry.$1, HttpStatus.ok);
     expect(retry.$2, containsPair('state', 'building'));
+    // Closing/reopening the phone's transport must not begin a second build.
+    final reconnected = HttpClient();
+    try {
+      final request = await reconnected.postUrl(server.url('127.0.0.1'));
+      request.write(
+        jsonEncode({
+          'requestId': id,
+          'abis': ['arm64-v8a'],
+        }),
+      );
+      final response = await request.close();
+      expect(response.statusCode, HttpStatus.ok);
+      expect(
+        jsonDecode(await utf8.decoder.bind(response).join()),
+        containsPair('state', 'building'),
+      );
+      expect(await server.waitForPhone(), ['arm64-v8a']);
+    } finally {
+      reconnected.close(force: true);
+    }
     expect(
       (await report('other-request-12345', ['arm64-v8a'])).$1,
       HttpStatus.conflict,

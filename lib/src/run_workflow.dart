@@ -345,6 +345,9 @@ class RunWorkflow {
         throw StateError(message);
       }
       logger.info('Building your app for $targetPlatform…');
+      logger.info(
+        'If your phone disconnects, keep this terminal running. Return to the same Wi-Fi and tap Reconnect to computer in Airreload Go, or use Show reconnect QR on the QR page.',
+      );
       final build = await _command([
         'build',
         'apk',
