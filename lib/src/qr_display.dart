@@ -89,6 +89,11 @@ String qrPairingPage(Uri pairing) {
     ol { display: inline-block; text-align: left; margin: 0; padding-left: 24px; }
     li { padding: 3px 0 3px 4px; }
     #message { margin: 0; color: #bccad5; }
+    #reconnect { margin-top: 24px; padding: 12px 18px; border: 1px solid #53738c;
+      border-radius: 10px; background: #223241; color: #edf2f6; font: inherit;
+      cursor: pointer; }
+    #reconnect:focus-visible { outline: 3px solid #70b9ed; outline-offset: 4px; }
+    #reconnect-help { color: #bccad5; margin: 16px 0 0; }
     .hint { color: #8e9eac; font-size: 13px; margin: 28px 0 0; }
     #status { display: flex; justify-content: center; align-items: center; gap: 9px;
       color: #70b9ed; font-size: 14px; margin: 24px 0 0; }
@@ -118,34 +123,53 @@ String qrPairingPage(Uri pairing) {
     <p id="message" hidden></p>
     <p id="status"><span id="dot" aria-hidden="true"></span><span id="label">Waiting for your phone</span></p>
   </section>
+  <button id="reconnect" type="button" hidden aria-controls="qr reconnect-help"
+    aria-expanded="false">Show reconnect QR</button>
+  <p id="reconnect-help" hidden>Scan with the same phone to resume this session.
+    Your existing build will continue; a finished APK will download without rebuilding.</p>
   <p class="hint" id="hint">Use the same trusted Wi-Fi network.<br>Keep the Airreload terminal running.</p>
   <noscript><p>Enable JavaScript to see live pairing status.</p></noscript>
 </main>
 <script>
   const el = (id) => document.getElementById(id);
   let previous = '';
+  let currentState = 'waiting';
+  let currentMessage = '';
+  let reconnectVisible = false;
   function render(state, message = '') {
-    const key = state + message;
+    currentState = state;
+    currentMessage = message;
+    const key = state + message + reconnectVisible;
     if (previous === key) return;
     previous = key;
     const waiting = state === 'waiting';
+    const canReconnect = state === 'building' || state === 'ready';
+    const showReconnect = canReconnect && reconnectVisible;
     const titles = {waiting: 'Pair with Airreload Go', building: 'Phone paired',
       ready: 'App ready', error: 'Something went wrong', offline: 'Session unavailable'};
     const labels = {waiting: 'Waiting for your phone', building: 'Building your app',
       ready: 'Paired', error: 'Check your terminal', offline: 'Waiting for the CLI'};
     document.body.dataset.state = state;
-    el('qr').hidden = !waiting;
+    el('qr').hidden = !waiting && !showReconnect;
     el('steps').hidden = !waiting;
-    el('result').hidden = waiting;
+    el('result').hidden = waiting || showReconnect;
     el('message').hidden = waiting;
     el('heading').textContent = titles[state];
     document.title = 'Airreload — ' + titles[state];
     el('message').textContent = message;
     el('label').textContent = labels[state];
-    el('hint').hidden = !waiting;
+    el('hint').hidden = !waiting && !showReconnect;
+    el('reconnect').hidden = !canReconnect;
+    el('reconnect').textContent = showReconnect ? 'Hide reconnect QR' : 'Show reconnect QR';
+    el('reconnect').setAttribute('aria-expanded', String(showReconnect));
+    el('reconnect-help').hidden = !showReconnect;
     el('symbol').setAttribute('d', state === 'error' || state === 'offline'
       ? 'M24 12v16M24 35v1' : 'M12 24l8 8 16-17');
   }
+  el('reconnect').addEventListener('click', () => {
+    reconnectVisible = !reconnectVisible;
+    render(currentState, currentMessage);
+  });
   async function poll() {
     try {
       const controller = new AbortController();
