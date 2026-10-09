@@ -3,7 +3,7 @@
 Airreload builds a Flutter Android debug APK, serves it over the local network,
 and attaches the Flutter tool for hot reload after the app opens.
 
-> **Beta:** The current version is `0.3.0-beta.6`, a pairing reconnect hotfix.
+> **Beta:** The current version is `0.3.0-beta.7`, with Flutter app logs in the terminal.
 
 ## Requirements
 
@@ -169,6 +169,15 @@ If you close the app on the phone, keep the terminal open and reopen the app.
 Airreload verifies the new process's VM service before attaching again and
 discards tunnels pointing at a stale VM. After updating Airreload's native
 runtime, run a fresh pairing/build and install the new debug APK once.
+
+## Flutter app logs
+
+Once your app connects, `airreload run` displays Dart stdout and stderr in the
+terminal, including `print()`, `debugPrint()`, and errors written to stderr.
+Logging stays active across hot restart and resumes when the app reconnects.
+Logs emitted before attachment are not replayed. Native Android Logcat output
+and structured `dart:developer.log()` events are not forwarded to the terminal;
+use DevTools for structured Dart logging.
 
 ## Contributing
 

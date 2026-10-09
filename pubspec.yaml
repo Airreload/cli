@@ -1,5 +1,5 @@
 name: airreload
-version: 0.3.0-beta.6
+version: 0.3.0-beta.7
 description: Local-network hot reload for Flutter Android apps.
 repository: https://github.com/Airreload/cli
 publish_to: none

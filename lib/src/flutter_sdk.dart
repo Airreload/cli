@@ -13,7 +13,7 @@ class FlutterRelease {
   final String version;
   final String dartVersion;
   final String commit;
-  String get tag => 'airreload-flutter-$version-v1-rc.1';
+  String get tag => 'airreload-flutter-$version-v1-rc.2';
 }
 
 // Immutable testing releases. Physical-phone acceptance is recorded separately.
@@ -21,22 +21,22 @@ const flutterReleases = <FlutterRelease>[
   FlutterRelease(
     '3.47.5',
     '3.13.4',
-    '1df5bcb36180331a0a696375d7d15403053be1c2',
+    'd964bddf6714858a396da55e697b6bf083fa1ea7',
   ),
   FlutterRelease(
     '3.44.9',
     '3.12.2',
-    '16a405b682fb261646bd8e2cc2453c08fc90214f',
+    'f65b6e1d5767a2c6f684b3e0b0bded1c4b432842',
   ),
   FlutterRelease(
     '3.41.9',
     '3.11.5',
-    '45650b965f55017ea97f94d2adc25102879b3f44',
+    '161dd4b26770cbbc40f2d5eff0f428cd25a690ce',
   ),
   FlutterRelease(
     '3.38.10',
     '3.10.9',
-    '89d0e1bd0b63a9c47f4e854d8f7b85386c1589b8',
+    '4cce477814d22c84972b51c2cf79e297340bbf8e',
   ),
 ];
 

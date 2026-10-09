@@ -163,8 +163,12 @@ String? flutterAndroidTargetForAbis(Iterable<String> abis) {
 }
 
 class RunWorkflow {
-  RunWorkflow(this.workspace, {Logger? logger}) : logger = logger ?? Logger();
+  RunWorkflow(this.workspace, {Logger? logger, this.developmentSdk})
+    : logger = logger ?? Logger();
   final Workspace workspace;
+
+  /// Used only by the source checkout's local SDK test launcher.
+  final Workspace? developmentSdk;
   final Logger logger;
   late final Workspace _sdk;
   final _cancelled = Completer<void>();
@@ -258,19 +262,36 @@ class RunWorkflow {
           !await Directory(p.join(source, 'android')).exists()) {
         throw StateError('Run from an existing Flutter Android app directory.');
       }
-      final manager = FlutterSdkManager(
-        workspace.root,
-        logger,
-        command: _sdkCommand,
-      );
-      final release = await manager.select(
-        source,
-        requested: options.flutterVersion,
-      );
-      logger.success(
-        '✓ Airreload supports Flutter ${release.version} (preview)',
-      );
-      _sdk = Workspace(workspace.root, sdkRoot: await manager.install(release));
+      FlutterRelease? release;
+      if (developmentSdk case final sdk?) {
+        if (options.flutterVersion != null) {
+          throw StateError(
+            'The local SDK launcher cannot use --flutter-version.',
+          );
+        }
+        if (!await File(sdk.flutter).exists()) {
+          throw StateError('Local Flutter SDK not found: ${sdk.flutter}');
+        }
+        _sdk = sdk;
+        logger.info('Using development Flutter SDK: ${sdk.sdkRoot}');
+      } else {
+        final manager = FlutterSdkManager(
+          workspace.root,
+          logger,
+          command: _sdkCommand,
+        );
+        release = await manager.select(
+          source,
+          requested: options.flutterVersion,
+        );
+        logger.success(
+          '✓ Airreload supports Flutter ${release.version} (preview)',
+        );
+        _sdk = Workspace(
+          workspace.root,
+          sdkRoot: await manager.install(release),
+        );
+      }
       if (_cancelled.isCompleted) throw _Cancelled();
       final address = await selectComputerAddress(options.host);
       await workspace.preparePrivateDirectory();
@@ -299,8 +320,8 @@ class RunWorkflow {
         'source': source,
         'target': prepared.target,
         'host': address,
-        'flutterVersion': release.version,
-        'flutterCommit': release.commit,
+        'flutterVersion': release?.version ?? 'development',
+        'flutterCommit': release?.commit,
         'flutterSdk': _sdk.sdkRoot,
       });
       final pairingUrl = pairing.url(address);
@@ -337,6 +358,11 @@ class RunWorkflow {
         ),
       );
       final targetPlatform = flutterAndroidTargetForAbis(abis);
+      if (developmentSdk != null && targetPlatform != 'android-arm64') {
+        throw StateError(
+          'The development SDK test launcher requires an ARM64 Android phone.',
+        );
+      }
       if (targetPlatform == null) {
         const message =
             'This phone reports no Flutter-supported ABI. Airreload supports arm64-v8a, armeabi-v7a, and x86_64; x86-only devices are not supported.';
@@ -408,7 +434,7 @@ class RunWorkflow {
           ...attachArguments(
             uri.toString(),
             prepared.target,
-            targetPlatform: targetPlatform,
+            targetPlatform: developmentSdk == null ? targetPlatform : null,
           ),
           ...options.dartArguments,
         ], prepared.directory);
