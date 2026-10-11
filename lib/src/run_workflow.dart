@@ -12,6 +12,7 @@ import 'platform_support.dart';
 import 'qr_display.dart';
 import 'session_host.dart';
 import 'workspace.dart';
+import 'telemetry.dart';
 
 String terminalQr(String data) {
   final image = QrImage(QrCode(payload: QrPayload.fromString(data)));
@@ -163,9 +164,14 @@ String? flutterAndroidTargetForAbis(Iterable<String> abis) {
 }
 
 class RunWorkflow {
-  RunWorkflow(this.workspace, {Logger? logger, this.developmentSdk})
-    : logger = logger ?? Logger();
+  RunWorkflow(
+    this.workspace, {
+    Logger? logger,
+    this.developmentSdk,
+    this.telemetry,
+  }) : logger = logger ?? Logger();
   final Workspace workspace;
+  final Telemetry? telemetry;
 
   /// Used only by the source checkout's local SDK test launcher.
   final Workspace? developmentSdk;
@@ -244,6 +250,18 @@ class RunWorkflow {
   }
 
   Future<int> run(RunOptions options) async {
+    if (await telemetry?.initialize() ?? false) {
+      logger.info(
+        'Airreload sends usage milestones, versions, OS, and a random installation ID '
+        'to PostHog. No source code, paths, or logs. '
+        'Disable with: airreload telemetry disable',
+      );
+    }
+    final elapsed = Stopwatch()..start();
+    var stage = RunStage.setup;
+    var outcome = RunOutcome.failed;
+    String? selectedVersion;
+    telemetry?.capture(TelemetryEvent.runStarted);
     final subscriptions = <StreamSubscription<ProcessSignal>>[];
     SessionHost? host;
     ApkServer? download;
@@ -284,6 +302,7 @@ class RunWorkflow {
           source,
           requested: options.flutterVersion,
         );
+        selectedVersion = release.version;
         logger.success(
           '✓ Airreload supports Flutter ${release.version} (preview)',
         );
@@ -349,6 +368,7 @@ class RunWorkflow {
           stdout.write(qr);
         }
       }
+      stage = RunStage.pairing;
       final abis = await _waitWithProgress(
         'Waiting for Airreload Go to pair',
         'Phone paired',
@@ -356,6 +376,10 @@ class RunWorkflow {
           pairing!.waitForPhone(),
           'The pairing wait timed out. Run Airreload again and scan the new QR code. Use --wait-timeout 0 to wait until you stop the session.',
         ),
+      );
+      telemetry?.capture(
+        TelemetryEvent.phonePaired,
+        flutterVersion: selectedVersion,
       );
       final targetPlatform = flutterAndroidTargetForAbis(abis);
       if (developmentSdk != null && targetPlatform != 'android-arm64') {
@@ -374,6 +398,8 @@ class RunWorkflow {
       logger.info(
         'If your phone disconnects, keep this terminal running. Return to the same Wi-Fi and tap Reconnect to computer in Airreload Go, or use Show reconnect QR on the QR page.',
       );
+      stage = RunStage.build;
+      final buildTime = Stopwatch()..start();
       final build = await _command([
         'build',
         'apk',
@@ -409,6 +435,11 @@ class RunWorkflow {
       final url = download.url(address).toString();
       pairing.publishDownload(download.url(address));
       logger.success('✓ App built');
+      telemetry?.capture(
+        TelemetryEvent.buildSucceeded,
+        flutterVersion: selectedVersion,
+        duration: buildTime.elapsed,
+      );
       logger.info(
         'Airreload Go will download your app automatically. Approve Android\'s install prompt, then open your app.',
       );
@@ -416,7 +447,9 @@ class RunWorkflow {
       logger.info('APK: ${apk.path}');
       logger.info('Keep this terminal open.');
       var failures = 0;
+      var reportedConnection = false;
       while (true) {
+        stage = RunStage.connection;
         final uri = await _waitWithProgress(
           'Waiting for your app to connect',
           'App connected',
@@ -425,11 +458,20 @@ class RunWorkflow {
             'The app connection wait timed out. Run Airreload again, then install and open the new session\'s APK. Check that the phone can reach $address. Use --wait-timeout 0 to wait until you stop the session.',
           ),
         );
+        if (!reportedConnection) {
+          reportedConnection = true;
+          telemetry?.capture(
+            TelemetryEvent.appConnected,
+            flutterVersion: selectedVersion,
+            duration: elapsed.elapsed,
+          );
+        }
         logger.info(
           'Starting Flutter attach; press r for hot reload, '
           'R for hot restart, d to detach, or q to quit. DevTools stays on this computer.',
         );
         final connectionGeneration = host.connectionGeneration;
+        stage = RunStage.attach;
         final code = await _command([
           ...attachArguments(
             uri.toString(),
@@ -443,6 +485,7 @@ class RunWorkflow {
           stillConnected: host.debugUri != null,
           sameConnection: host.connectionGeneration == connectionGeneration,
         )) {
+          outcome = RunOutcome.completed;
           return 0;
         }
         logger.warn(
@@ -466,8 +509,16 @@ class RunWorkflow {
         await _untilCancelled(Future<void>.delayed(const Duration(seconds: 2)));
       }
     } on _Cancelled {
+      outcome = RunOutcome.cancelled;
       return 130;
     } finally {
+      telemetry?.capture(
+        TelemetryEvent.runEnded,
+        flutterVersion: selectedVersion,
+        stage: stage,
+        outcome: outcome,
+        duration: elapsed.elapsed,
+      );
       for (final subscription in subscriptions) {
         await subscription.cancel();
       }

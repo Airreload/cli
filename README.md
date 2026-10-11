@@ -34,6 +34,69 @@ checkouts. The public installer places the native executable in
 `~/.airreload/bin` (or `%USERPROFILE%\.airreload\bin`) and needs no Dart or Flutter
 installation. See the [installer](https://github.com/Airreload/installer).
 
+## Optional CLI analytics
+
+Airreload's own telemetry is **enabled by default**. View or change it at any time:
+
+```sh
+airreload telemetry status
+airreload telemetry disable
+airreload telemetry enable
+```
+
+The preference is stored per installation in `cli/.airreload/telemetry.json`.
+The first tracked run creates a random installation ID and prints a short notice
+with the disable command. Explicitly enabling also creates an ID; disabling removes it. Enabling again
+after disabling creates a new ID. Disabling does not delete previously received
+events from PostHog. Help, version, status, and telemetry controls send no events.
+`AIRRELOAD_TELEMETRY_DISABLED=1`, `DO_NOT_TRACK=1`, or `CI=true`/`CI=1` overrides
+the saved preference and the enabled default, without creating an ID. A missing
+preference uses the enabled default; unreadable or invalid existing settings
+disable collection. Existing opt-outs are preserved.
+
+Only `airreload run` emits these explicit events:
+
+| Event | Meaning | Additional fields |
+| --- | --- | --- |
+| `cli_run_started` | Run command entered | None |
+| `cli_phone_paired` | Phone pairing completed | Flutter version |
+| `cli_build_succeeded` | Debug APK ready to download | Flutter version, build duration |
+| `cli_app_connected` | First responsive app VM connection in this run | Flutter version, time since run start |
+| `cli_run_ended` | Run completed, was cancelled, or failed | Flutter version when known, last stage, outcome, elapsed duration |
+
+Common fields are event timestamp, random installation ID, `surface=cli`, CLI
+version, and operating-system name. Stages and outcomes are fixed categories.
+Events never include source code, project names/paths, command arguments,
+environment variables, pairing tokens, app logs, or raw errors. Collection uses
+HTTPS to Airreload's US PostHog project; person profiles and GeoIP enrichment are
+disabled in the payload. The receiving server still sees the connection IP.
+Configure PostHog's project-level IP discard setting before collecting real usage.
+
+Sending happens in the background, with a one-second request deadline, at most
+four concurrent requests and 64 events per invocation. No disk queue, retries,
+redirects, session replay, or automatic event capture is used. Normal command
+shutdown waits at most 250 ms for pending requests. Network failures silently
+drop events. Active processes recheck the saved preference before each send; an already
+transmitted request cannot be recalled. Opt-outs and best-effort delivery mean
+these metrics describe participating installations, not all users or downloads.
+An app connection is **not** a successful hot reload. Individual reloads are not
+measured yet because Flutter owns the interactive attach process.
+
+### PostHog configuration for maintainers
+
+The bundled `phc_` project token is intentionally public and grants no access to
+private analytics. Never put personal (`phx_`) or secret (`phs_`) keys in the CLI.
+Runtime environment variables `AIRRELOAD_POSTHOG_TOKEN` and
+`AIRRELOAD_POSTHOG_REGION` (`us` or `eu`) override the defaults. These values can
+also be overridden at compilation using Dart `-D` options; saved opt-outs and
+environment overrides still take precedence. Invalid tokens/regions disable collection. Test suites use
+a synthetic token and a local HTTP server, never the production project.
+
+Use the free PostHog plan or set a billing limit. A public token can be abused
+to submit fake events; do not use this telemetry as proof of identity or for
+billing. The `cli_telemetry_test` event is reserved for manual integration checks
+and should be excluded from usage dashboards.
+
 ## Waiting and reconnecting
 
 `airreload run` keeps its pairing code, download server, and app connection

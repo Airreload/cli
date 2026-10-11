@@ -11,14 +11,17 @@ import 'platform_support.dart';
 import 'run_workflow.dart';
 import 'workspace.dart';
 import 'update.dart';
+import 'telemetry.dart';
 
 class Operations {
-  Operations(this.workspace);
+  Operations(this.workspace, {Telemetry? telemetry})
+    : telemetry = telemetry ?? Telemetry(workspace);
   final Workspace workspace;
+  final Telemetry telemetry;
   late final Logger logger = Logger();
 
   Future<int> runApp(RunOptions options) =>
-      RunWorkflow(workspace, logger: logger).run(options);
+      RunWorkflow(workspace, logger: logger, telemetry: telemetry).run(options);
 
   Future<int> update({bool checkOnly = false}) =>
       UpdateManager(workspace, logger: logger).update(checkOnly: checkOnly);
@@ -177,6 +180,7 @@ class AirreloadRunner extends CommandRunner<int> {
         help: 'Pairing, connection, and reconnection timeout in seconds; 0 waits until Ctrl-C.',
       );
     addCommand(run);
+    addCommand(TelemetryCommand(operations.telemetry));
     final update = ActionCommand(
       'update',
       'Check and install the latest official Airreload CLI release in this installation.',
@@ -313,6 +317,49 @@ class AirreloadRunner extends CommandRunner<int> {
   final Operations operations;
 }
 
+class TelemetryCommand extends Command<int> {
+  TelemetryCommand(Telemetry telemetry) {
+    addSubcommand(
+      ActionCommand(
+        'status',
+        'Show your preference, collection status, and the data sent to PostHog.',
+        (_) async {
+          stdout.writeln(telemetry.status);
+          return 0;
+        },
+      ),
+    );
+    addSubcommand(
+      ActionCommand(
+        'enable',
+        'Enable sending usage milestones and a random installation ID to PostHog.',
+        (_) async {
+          await telemetry.setEnabled(true);
+          stdout.writeln(telemetry.status);
+          return 0;
+        },
+      ),
+    );
+    addSubcommand(
+      ActionCommand(
+        'disable',
+        'Stop collection and remove the local installation ID.',
+        (_) async {
+          await telemetry.setEnabled(false);
+          stdout.writeln('Telemetry disabled. Local installation ID removed.');
+          return 0;
+        },
+      ),
+    );
+  }
+
+  @override
+  String get name => 'telemetry';
+  @override
+  String get description =>
+      'Manage CLI usage analytics (enabled by default; disable at any time).';
+}
+
 class ActionCommand extends Command<int> {
   ActionCommand(this.name, this.description, this.action);
   @override
@@ -349,5 +396,7 @@ Future<int> runCli(List<String> args, Operations operations) async {
   } on Object catch (error) {
     operations.logger.err('Airreload failed (${error.runtimeType}).');
     return 1;
+  } finally {
+    await operations.telemetry.close();
   }
 }
